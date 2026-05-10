@@ -364,7 +364,7 @@ async function saveArtistProfile(artist){
 // ─────────────────────────────────────────
 function defaultState(){
   return{step:1,artist:{name:'',email:'',mobile:'',website:'',bio:''},profileFound:false,category:'',
-    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'Unframed',frameDesc:''}};
+    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}};
 }
 
 function renderSubmit(state){
@@ -537,7 +537,7 @@ window.doSubmit = async function(){
     dimensions:(document.getElementById('p-dims')||{}).value||'',
     weight:(document.getElementById('p-weight')||{}).value||'',
     plinths:(document.getElementById('p-plinths')||{}).value||'',
-    framed:(document.getElementById('p-framed')||{}).value||'Unframed',
+    framed:(document.getElementById('p-framed')||{}).value||'',
     frameDesc:(document.getElementById('p-frameDesc')||{}).value||'',
     edition:s.piece.edition||'One Off',
     editionNum:(document.getElementById('p-edNum')||{}).value||'',
@@ -589,7 +589,7 @@ window.submitAnother = function(){
   const s=window._submitState;
   window._pendingImages=[];
   renderSubmit({step:2,artist:s.artist,profileFound:true,category:'',
-    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'Unframed',frameDesc:''}});
+    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}});
 };
 
 // ─────────────────────────────────────────
@@ -753,7 +753,7 @@ window.saveEdit=async function(id){
     dimensions:document.getElementById('ep-dims').value.trim(),
     weight:(document.getElementById('ep-weight')||{}).value||sub.piece.weight||'',
     plinths:(document.getElementById('ep-plinths')||{}).value||sub.piece.plinths||'',
-    framed:(document.getElementById('ep-framed')||{}).value||sub.piece.framed||'Unframed',
+    framed:(document.getElementById('ep-framed')||{}).value||sub.piece.framed||'',
     frameDesc:(document.getElementById('ep-frameDesc')||{}).value||sub.piece.frameDesc||'',
     edition:window._editEdition||sub.piece.edition,
     editionNum:(document.getElementById('ep-edNum')||{}).value||'',
@@ -1310,7 +1310,7 @@ async function pushToSheets(sub) {
     lead_time: sub.piece.leadTime||'',
     weight: sub.piece.weight||'',
     plinths: sub.piece.plinths||'',
-    framed: sub.piece.framed||'',
+    framed: is2D(sub.category) ? (sub.piece.framed||'') : '',
     frame_desc: sub.piece.frameDesc||'',
     status: sub.status||'',
     image_count: (sub.images||[]).length,
@@ -1348,7 +1348,7 @@ async function pushToShopify(sub) {
     sub.piece.weight ? '<p><strong>Weight:</strong> '+sub.piece.weight+'g</p>' : '',
     sub.piece.edition !== 'One Off' ? '<p><strong>Edition:</strong> '+sub.piece.edition+(sub.piece.editionNum?' — '+sub.piece.editionNum:'')+'</p>' : '<p><strong>Edition:</strong> One Off</p>',
     sub.piece.plinths ? '<p><strong>Plinth:</strong> '+sub.piece.plinths+'</p>' : '',
-    sub.piece.framed ? '<p><strong>Framing:</strong> '+sub.piece.framed+(sub.piece.frameDesc?' — '+sub.piece.frameDesc:'')+'</p>' : '',
+    is2D(sub.category) && sub.piece.framed ? '<p><strong>Framing:</strong> '+sub.piece.framed+(sub.piece.frameDesc?' — '+sub.piece.frameDesc:'')+'</p>' : '',
   ].filter(Boolean).join(' ');
 
   const product = {
