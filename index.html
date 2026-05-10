@@ -1383,15 +1383,33 @@ async function pushToShopify(sub) {
   const data = await res.json();
   const productId = data.product.id.toString();
 
-  // Set cost per item via Inventory Item API (cannot be set at product creation)
+  // Set cost + inventory quantity after creation (Shopify ignores these at product creation)
   try {
-    const inventoryItemId = data.product.variants[0].inventory_item_id;
+    const variant = data.product.variants[0];
+    const inventoryItemId = variant.inventory_item_id;
+
+    // 1. Set cost per item
     await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_items/'+inventoryItemId+'.json', {
       method: 'PUT',
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
       body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2) } }),
     });
-  } catch(e) { console.warn('Cost per item update failed (non-fatal):', e); }
+
+    // 2. Get the location ID (needed to set inventory level)
+    const locRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/locations.json', {
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store },
+    });
+    const locData = await locRes.json();
+    const locationId = locData.locations[0].id;
+
+    // 3. Set inventory quantity at that location
+    const qty = parseInt(sub.piece.numDelivered)||0;
+    await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_levels/set.json', {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: qty }),
+    });
+  } catch(e) { console.warn('Post-creation inventory/cost update failed (non-fatal):', e); }
 
   return productId;
 }
