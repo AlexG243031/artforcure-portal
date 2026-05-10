@@ -423,9 +423,8 @@ function renderSubmit(state){
     <div class="type-selector">
       ${['Painting','Photograph','Print','Sculpture','Ceramic'].map(c=>`<div class="type-btn ${category===c?'selected':''}" onclick="selectCategory('${c}')">${c}</div>`).join('')}
     </div>
-    <div style="display:flex;justify-content:space-between">
+    <div style="display:flex;justify-content:flex-start">
       <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
-      <button class="btn btn-primary" onclick="submitStep2()">Next: Piece Details →</button>
     </div>
   </div>`;
 
