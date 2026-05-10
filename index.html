@@ -512,7 +512,7 @@ window.checkProfile = async function(){
 };
 window.clearProfile = function(){ const s=window._submitState; s.artist={name:'',email:'',mobile:'',website:'',bio:''}; s.profileFound=false; renderSubmit(s); };
 window.updateWordCount = function(el){ const c=wc(el.value), d=document.getElementById('wc-display'); if(d){d.textContent=c+'/100 words';d.className='word-count'+(c>100?' over':'');} };
-window.selectCategory = function(cat){ window._submitState.category=cat; document.querySelectorAll('#s2 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent===cat)); };
+window.selectCategory = function(cat){ window._submitState.category=cat; document.querySelectorAll('#s2 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent===cat)); setTimeout(()=>{ window._submitState.step=3; renderSubmit(window._submitState); }, 300); };
 window.selectEdition = function(ed){ window._submitState.piece.edition=ed; document.querySelectorAll('#s3 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent.trim()===ed)); const ef=document.getElementById('edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':''; };
 window.toggleFrameDesc = function(val){ const w=document.getElementById('frame-desc-wrap'); if(w)w.style.display=val==='Framed'?'':'none'; };
 window.goStep = function(n){ window._submitState.step=n; renderSubmit(window._submitState); };
@@ -1356,6 +1356,7 @@ async function pushToShopify(sub) {
     title: sub.piece.name,
     body_html: bodyHtml,
     vendor: sub.artist.name,
+    status: 'draft',
     product_type: sub.category,
     tags: ['Art for Cure', sub.category, sub.piece.edition, sub.artist.name].filter(Boolean).join(', '),
     variants: [{ price: price.toFixed(2), inventory_management: null }],
