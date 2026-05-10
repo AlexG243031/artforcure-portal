@@ -1338,6 +1338,8 @@ async function pushToShopify(sub) {
   const token  = await getShopifyToken();
 
   const price = parseFloat(sub.piece.price)||0;
+  const comm  = parseFloat(sub.commission)||40;
+  const cos   = price * ((100 - comm) / 100);
   const imgs = (sub.images||[]).map((img,i)=>({ src: img.url, position: i+1, alt: sub.piece.name }));
 
   const bodyHtml = [
@@ -1356,7 +1358,7 @@ async function pushToShopify(sub) {
     vendor: sub.artist.name,
     product_type: sub.category,
     tags: ['Art for Cure', sub.category, sub.piece.edition, sub.artist.name].filter(Boolean).join(', '),
-    variants: [{ price: price.toFixed(2), inventory_management: null }],
+    variants: [{ price: price.toFixed(2), cost: cos.toFixed(2), inventory_management: null }],
     images: imgs,
     metafields: [
       { namespace:'artforcure', key:'artist_email', value: sub.artist.email, type:'single_line_text_field' },
