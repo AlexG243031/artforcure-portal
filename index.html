@@ -1358,7 +1358,7 @@ async function pushToShopify(sub) {
     vendor: sub.artist.name,
     product_type: sub.category,
     tags: ['Art for Cure', sub.category, sub.piece.edition, sub.artist.name].filter(Boolean).join(', '),
-    variants: [{ price: price.toFixed(2), cost: cos.toFixed(2), inventory_management: null }],
+    variants: [{ price: price.toFixed(2), inventory_management: null }],
     images: imgs,
     metafields: [
       { namespace:'artforcure', key:'artist_email', value: sub.artist.email, type:'single_line_text_field' },
@@ -1376,7 +1376,19 @@ async function pushToShopify(sub) {
     throw new Error('Shopify '+res.status+': '+(err.errors ? JSON.stringify(err.errors) : 'Unknown error'));
   }
   const data = await res.json();
-  return data.product.id.toString();
+  const productId = data.product.id.toString();
+
+  // Set cost per item via Inventory Item API (cannot be set at product creation)
+  try {
+    const inventoryItemId = data.product.variants[0].inventory_item_id;
+    await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_items/'+inventoryItemId+'.json', {
+      method: 'PUT',
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2) } }),
+    });
+  } catch(e) { console.warn('Cost per item update failed (non-fatal):', e); }
+
+  return productId;
 }
 
 // ── STORAGE CONNECTION TEST ──
