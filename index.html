@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Art for Cure — Artist Submission Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import {
+    getFirestore, collection, addDoc, getDocs, doc, updateDoc,
+    query, orderBy, serverTimestamp, getDoc
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import {
+    getStorage, ref, uploadBytes, getDownloadURL
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw55o",
+    authDomain: "art-for-cure.firebaseapp.com",
+    projectId: "art-for-cure",
+    storageBucket: "art-for-cure.firebasestorage.app",
+    messagingSenderId: "11223551235",
+    appId: "1:11223551235:web:2a4472a2e56530844ced36"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  window._db = db;
+  window._storage = storage;
+  window._firebase = { collection, addDoc, getDocs, doc, updateDoc, query, orderBy, serverTimestamp, getDoc, ref, uploadBytes, getDownloadURL };
+  document.dispatchEvent(new Event("firebaseReady"));
+</script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --pink: #e8427a;
+  --pink-light: #fce8f0;
+  --pink-mid: #f0aac8;
+  --pink-dark: #b02e5a;
+  --gray-bg: #faf8f9;
+  --gray-border: #e6dfe3;
+  --gray-text: #6e5c64;
+  --dark: #251a1f;
+  --white: #ffffff;
+  --success: #2a7a50;
+  --success-bg: #e6f5ee;
+  --success-border: #9fd4b8;
+  --danger: #b83030;
+  --danger-bg: #fdecea;
+  --danger-border: #f0b0b0;
+  --warn-bg: #fff8e6;
+  --warn-border: #f0d080;
+  --warn: #a05c10;
+  --radius: 10px;
+  --shadow: 0 2px 16px rgba(37,26,31,0.09);
+}
+
+body {
+  font-family: 'EB Garamond', Georgia, serif;
+  background: var(--gray-bg);
+  color: var(--dark);
+  min-height: 100vh;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+/* ── HEADER ── */
+header {
+  background: var(--white);
+  border-bottom: 1.5px solid var(--gray-border);
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 62px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 8px rgba(37,26,31,0.06);
+}
+.logo {
+  width: 36px; height: 36px;
+  background: var(--pink);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 600; font-size: 14px; letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+header h1 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--dark);
+  flex: 1;
+}
+header h1 span { color: var(--pink); }
+
+/* ── NAV ── */
+nav {
+  display: flex;
+  gap: 4px;
+  background: var(--gray-bg);
+  border-bottom: 1.5px solid var(--gray-border);
+  padding: 0 20px;
+  overflow-x: auto;
+}
+nav button {
+  background: none; border: none;
+  padding: 12px 18px;
+  font-family: inherit; font-size: 0.92rem;
+  color: var(--gray-text);
+  cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1.5px;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+nav button:hover { color: var(--pink); }
+nav button.active { color: var(--pink); border-bottom-color: var(--pink); font-weight: 600; }
+
+/* ── MAIN ── */
+main { max-width: 760px; margin: 0 auto; padding: 32px 20px 60px; }
+
+.section { display: none; }
+.section.active { display: block; }
+
+h2 { font-size: 1.55rem; font-weight: 600; margin-bottom: 6px; }
+.subtitle { color: var(--gray-text); font-style: italic; margin-bottom: 28px; font-size: 1rem; }
+
+/* ── CARDS & ALERTS ── */
+.card {
+  background: var(--white);
+  border: 1.5px solid var(--gray-border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.alert {
+  padding: 13px 18px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  font-size: 0.95rem;
+  border: 1.5px solid;
+}
+.alert.success { background: var(--success-bg); border-color: var(--success-border); color: var(--success); }
+.alert.danger  { background: var(--danger-bg);  border-color: var(--danger-border);  color: var(--danger); }
+.alert.warn    { background: var(--warn-bg);    border-color: var(--warn-border);    color: var(--warn); }
+.alert.info    { background: var(--pink-light); border-color: var(--pink-mid);       color: var(--pink-dark); }
+
+/* ── FORM ── */
+.form-group { margin-bottom: 20px; }
+label { display: block; font-size: 0.9rem; font-weight: 600; color: var(--gray-text); margin-bottom: 6px; letter-spacing: 0.3px; text-transform: uppercase; }
+input[type=text], input[type=email], input[type=number], input[type=password],
+textarea, select {
+  width: 100%; padding: 11px 14px;
+  border: 1.5px solid var(--gray-border);
+  border-radius: 8px;
+  font-family: inherit; font-size: 1rem;
+  background: var(--white); color: var(--dark);
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(232,66,122,0.12);
+}
+textarea { resize: vertical; min-height: 100px; }
+.hint { font-size: 0.82rem; color: var(--gray-text); margin-top: 5px; font-style: italic; }
+.required { color: var(--pink); margin-left: 2px; }
+
+/* ── FILE UPLOAD ── */
+.file-drop {
+  border: 2px dashed var(--pink-mid);
+  border-radius: var(--radius);
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  position: relative;
+  background: var(--pink-light);
+}
+.file-drop:hover, .file-drop.dragover { background: #f8d8e8; border-color: var(--pink); }
+.file-drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.file-drop .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+.file-drop p { color: var(--gray-text); font-size: 0.95rem; margin: 0; }
+.file-drop strong { color: var(--pink); }
+.file-previews { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.file-preview {
+  width: 90px; height: 90px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1.5px solid var(--gray-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-family: inherit; font-size: 0.95rem; font-weight: 600;
+  cursor: pointer; border: none;
+  transition: background .15s, opacity .15s, transform .1s;
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--pink); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--pink-dark); }
+.btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+.btn-outline { background: white; border: 1.5px solid var(--gray-border); color: var(--dark); }
+.btn-outline:hover:not(:disabled) { border-color: var(--pink); color: var(--pink); }
+.btn-success { background: #2a7a50; color: white; }
+.btn-success:hover:not(:disabled) { background: #1e5c3c; }
+.btn-danger  { background: #b83030; color: white; }
+.btn-danger:hover:not(:disabled)  { background: #8c2020; }
+.btn-shopify { background: #96bf48; color: white; }
+.btn-shopify:hover:not(:disabled) { background: #7ea838; }
+
+/* ── SUBMISSION CARDS (admin) ── */
+.submission-card {
+  background: var(--white);
+  border: 1.5px solid var(--gray-border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.submission-card.status-approved { border-left: 4px solid #2a7a50; }
+.submission-card.status-rejected { border-left: 4px solid #b83030; opacity: 0.7; }
+.submission-card.status-pushed   { border-left: 4px solid #96bf48; }
+.submission-card.status-pending  { border-left: 4px solid var(--pink-mid); }
+
+.sub-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.sub-title { font-size: 1.1rem; font-weight: 600; }
+.sub-artist { color: var(--gray-text); font-style: italic; font-size: 0.95rem; }
+.badge {
+  padding: 3px 11px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0;
+}
+.badge-pending  { background: var(--pink-light); color: var(--pink-dark); }
+.badge-approved { background: var(--success-bg); color: var(--success); }
+.badge-rejected { background: var(--danger-bg);  color: var(--danger); }
+.badge-pushed   { background: #f0f7e6; color: #5a8a20; }
+
+.sub-meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.88rem; color: var(--gray-text); margin-bottom: 14px; }
+.sub-meta span::before { margin-right: 4px; }
+.sub-images { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.sub-images img {
+  width: 80px; height: 80px; object-fit: cover;
+  border-radius: 6px; border: 1.5px solid var(--gray-border);
+  cursor: pointer; transition: transform .15s;
+}
+.sub-images img:hover { transform: scale(1.06); }
+.sub-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sub-notes { font-size: 0.9rem; color: var(--gray-text); background: var(--gray-bg); padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; font-style: italic; }
+
+/* ── SETTINGS ── */
+.settings-section { margin-bottom: 32px; }
+.settings-section h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
+.settings-section .desc { color: var(--gray-text); font-size: 0.9rem; margin-bottom: 16px; font-style: italic; }
+.connection-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-top: 12px; }
+.connection-status.ok   { background: var(--success-bg); color: var(--success); border: 1.5px solid var(--success-border); }
+.connection-status.fail { background: var(--danger-bg);  color: var(--danger);  border: 1.5px solid var(--danger-border); }
+.connection-status.testing { background: var(--warn-bg); color: var(--warn); border: 1.5px solid var(--warn-border); }
+
+/* ── FILTERS ── */
+.filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.filter-btn {
+  padding: 6px 16px; border-radius: 20px; border: 1.5px solid var(--gray-border);
+  background: white; font-family: inherit; font-size: 0.87rem; cursor: pointer;
+  color: var(--gray-text); transition: all .15s;
+}
+.filter-btn:hover { border-color: var(--pink); color: var(--pink); }
+.filter-btn.active { background: var(--pink); color: white; border-color: var(--pink); }
+
+/* ── EMPTY STATE ── */
+.empty { text-align: center; padding: 48px 20px; color: var(--gray-text); }
+.empty .icon { font-size: 2.5rem; margin-bottom: 12px; }
+
+/* ── LIGHTBOX ── */
+#lightbox {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.88); z-index: 1000;
+  align-items: center; justify-content: center; padding: 20px;
+}
+#lightbox.open { display: flex; }
+#lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 8px; }
+#lightbox-close {
+  position: absolute; top: 18px; right: 22px;
+  background: none; border: none; color: white; font-size: 2rem;
+  cursor: pointer; line-height: 1;
+}
+
+/* ── SPINNER ── */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2.5px solid rgba(255,255,255,0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── PROGRESS ── */
+.upload-progress { margin-top: 12px; display: none; }
+.upload-progress.show { display: block; }
+.progress-bar-bg { background: var(--gray-border); border-radius: 4px; height: 6px; overflow: hidden; }
+.progress-bar-fill { background: var(--pink); height: 100%; width: 0; transition: width .3s; border-radius: 4px; }
+.progress-label { font-size: 0.82rem; color: var(--gray-text); margin-top: 5px; }
+
+/* ── DIVIDER ── */
+hr { border: none; border-top: 1.5px solid var(--gray-border); margin: 28px 0; }
+
+/* ── MY SUBMISSION STATUS ── */
+.status-timeline { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+.timeline-step { display: flex; gap: 16px; padding-bottom: 20px; position: relative; }
+.timeline-step:not(:last-child)::before {
+  content: ''; position: absolute; left: 15px; top: 32px;
+  width: 2px; bottom: 0; background: var(--gray-border);
+}
+.step-dot {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; font-weight: 700; border: 2px solid;
+}
+.step-dot.done  { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+.step-dot.active { background: var(--pink-light); border-color: var(--pink); color: var(--pink); }
+.step-dot.wait  { background: white; border-color: var(--gray-border); color: var(--gray-text); }
+.step-content h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; padding-top: 4px; }
+.step-content p  { font-size: 0.87rem; color: var(--gray-text); font-style: italic; }
+
+@media (max-width: 560px) {
+  main { padding: 20px 12px 50px; }
+  .card { padding: 18px; }
+  header { padding: 0 14px; }
+  nav button { padding: 10px 12px; font-size: 0.85rem; }
+  .sub-actions { gap: 6px; }
+  .btn { padding: 9px 16px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">AFC</div>
+  <h1>Art for <span>Cure</span></h1>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('submit')">Submit Work</button>
+  <button onclick="showTab('status')">My Submission</button>
+  <button onclick="showTab('admin')">Admin Review</button>
+  <button onclick="showTab('settings')">⚙ Settings</button>
+</nav>
+
+<main>
+
+<!-- ══════════════════════════════════════════ SUBMIT TAB -->
+<div id="tab-submit" class="section active">
+  <h2>Submit Your Artwork</h2>
+  <p class="subtitle">All submissions are reviewed before being listed in the shop.</p>
+
+  <div id="submit-alert"></div>
+
+  <div class="card">
+    <div class="form-group">
+      <label>Artist Name <span class="required">*</span></label>
+      <input type="text" id="f-artist" placeholder="Your full name">
+    </div>
+    <div class="form-group">
+      <label>Email Address <span class="required">*</span></label>
+      <input type="email" id="f-email" placeholder="you@example.com">
+      <p class="hint">Used to notify you of your submission status</p>
+    </div>
+    <div class="form-group">
+      <label>Artwork Title <span class="required">*</span></label>
+      <input type="text" id="f-title" placeholder="Title of your piece">
+    </div>
+    <div class="form-group">
+      <label>Category <span class="required">*</span></label>
+      <select id="f-category">
+        <option value="">— Select category —</option>
+        <option>Painting</option>
+        <option>Photography</option>
+        <option>Sculpture</option>
+        <option>Print</option>
+        <option>Mixed Media</option>
+        <option>Digital Art</option>
+        <option>Drawing</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="f-desc" placeholder="Tell us about your piece — materials, inspiration, dimensions…"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Suggested Price (£)</label>
+      <input type="number" id="f-price" placeholder="0.00" min="0" step="0.01">
+    </div>
+    <div class="form-group">
+      <label>Artwork Images <span class="required">*</span></label>
+      <div class="file-drop" id="file-drop">
+        <input type="file" id="f-images" accept="image/*" multiple>
+        <div class="upload-icon">🖼</div>
+        <p><strong>Click to upload</strong> or drag images here</p>
+        <p>JPG, PNG, GIF · Max 10MB per image</p>
+      </div>
+      <div class="file-previews" id="file-previews"></div>
+      <div class="upload-progress" id="upload-progress">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+        <p class="progress-label" id="progress-label">Uploading…</p>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">
+      Submit Artwork
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ STATUS TAB -->
+<div id="tab-status" class="section">
+  <h2>My Submission</h2>
+  <p class="subtitle">Look up your submission status by email address.</p>
+
+  <div class="card">
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Your Email Address</label>
+      <input type="email" id="lookup-email" placeholder="you@example.com">
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="lookupStatus()">Look Up</button>
+  </div>
+
+  <div id="status-result"></div>
+</div>
+
+<!-- ══════════════════════════════════════════ ADMIN TAB -->
+<div id="tab-admin" class="section">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px">
+    <h2 style="margin-bottom:0">Admin Review</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadSubmissions()">↻ Refresh</button>
+  </div>
+  <p class="subtitle">Review, approve, and push submissions to your Shopify store.</p>
+
+  <div class="filters">
+    <button class="filter-btn active" onclick="filterSubs('all',this)">All</button>
+    <button class="filter-btn" onclick="filterSubs('pending',this)">Pending</button>
+    <button class="filter-btn" onclick="filterSubs('approved',this)">Approved</button>
+    <button class="filter-btn" onclick="filterSubs('pushed',this)">On Shopify</button>
+    <button class="filter-btn" onclick="filterSubs('rejected',this)">Rejected</button>
+  </div>
+
+  <div id="admin-list"><div class="empty"><div class="icon">⏳</div><p>Loading submissions…</p></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════ SETTINGS TAB -->
+<div id="tab-settings" class="section">
+  <h2>Settings</h2>
+  <p class="subtitle">Configure your Shopify integration.</p>
+
+  <!-- Shopify Settings -->
+  <div class="card">
+    <div class="settings-section" style="margin-bottom:0">
+      <h3>🛍 Shopify Integration</h3>
+      <p class="desc">Connect to your Shopify store to push approved submissions as products. Uses the Dev Dashboard client credentials flow — tokens refresh automatically.</p>
+
+      <div class="form-group">
+        <label>Store Name</label>
+        <input type="text" id="s-store" placeholder="art-for-cure" style="max-width:320px">
+        <p class="hint">The part before .myshopify.com</p>
+      </div>
+      <div class="form-group">
+        <label>Client ID</label>
+        <input type="text" id="s-client-id" placeholder="Paste your Client ID from Dev Dashboard">
+      </div>
+      <div class="form-group">
+        <label>Client Secret</label>
+        <input type="password" id="s-client-secret" placeholder="Paste your Client Secret from Dev Dashboard">
+        <p class="hint">Stored in your Firebase database · never shared</p>
+      </div>
+      <div class="form-group">
+        <label>Worker URL</label>
+        <input type="text" id="s-worker" placeholder="https://holy-hill-e968.alex-7fd.workers.dev">
+        <p class="hint">Your Cloudflare Worker proxy URL</p>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
+        <button class="btn btn-outline btn-sm" onclick="testShopify()">Test Connection</button>
+      </div>
+      <div id="shopify-status"></div>
+    </div>
+  </div>
+
+  <div class="alert info">
+    <strong>Where to find your credentials:</strong><br>
+    Go to <strong>dev.shopify.com/dashboard</strong> → open your Art for Cure app → <strong>Settings</strong> → copy the <em>Client ID</em> and <em>Client Secret</em>.
+  </div>
+</div>
+
+</main>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// GLOBALS & STATE
+// ══════════════════════════════════════════════════════
+let db, firebase, storage;
+let allSubmissions = [];
+let selectedFiles = [];
+let shopifyTokenCache = { token: null, expiresAt: 0 };
+
+const SETTINGS_DOC_ID = 'shopify_settings';
+
+// ══════════════════════════════════════════════════════
+// FIREBASE INIT
+// ══════════════════════════════════════════════════════
+document.addEventListener('firebaseReady', async () => {
+  db = window._db;
+  firebase = window._firebase;
+  storage = window._storage;
+  await loadSettingsFromDB();
+  if (document.getElementById('tab-admin').classList.contains('active')) {
+    loadSubmissions();
+  }
+});
+
+// ══════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════
+function showTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'admin') loadSubmissions();
+}
+
+// ══════════════════════════════════════════════════════
+// FILE UPLOAD UI
+// ══════════════════════════════════════════════════════
+document.getElementById('f-images').addEventListener('change', e => {
+  handleFiles(Array.from(e.target.files));
+});
+const drop = document.getElementById('file-drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('dragover');
+  handleFiles(Array.from(e.dataTransfer.files));
+});
+
+function handleFiles(files) {
+  const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 10*1024*1024);
+  selectedFiles = [...selectedFiles, ...valid].slice(0, 8);
+  renderPreviews();
+}
+
+function renderPreviews() {
+  const container = document.getElementById('file-previews');
+  container.innerHTML = '';
+  selectedFiles.forEach(f => {
+    const img = document.createElement('img');
+    img.className = 'file-preview';
+    img.src = URL.createObjectURL(f);
+    container.appendChild(img);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// SUBMIT FORM
+// ══════════════════════════════════════════════════════
+async function submitForm() {
+  const alertEl = document.getElementById('submit-alert');
+  alertEl.innerHTML = '';
+
+  const artist   = v('f-artist');
+  const email    = v('f-email');
+  const title    = v('f-title');
+  const category = v('f-category');
+  const desc     = v('f-desc');
+  const price    = parseFloat(v('f-price')) || 0;
+
+  if (!artist || !email || !title || !category) {
+    return showAlert('submit-alert', 'Please fill in all required fields.', 'danger');
+  }
+  if (!selectedFiles.length) {
+    return showAlert('submit-alert', 'Please add at least one image of your artwork.', 'danger');
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading…';
+
+  try {
+    // Upload images
+    const imageUrls = [];
+    const prog = document.getElementById('upload-progress');
+    const fill = document.getElementById('progress-fill');
+    const lbl  = document.getElementById('progress-label');
+    prog.classList.add('show');
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const pct = Math.round((i / selectedFiles.length) * 100);
+      fill.style.width = pct + '%';
+      lbl.textContent = `Uploading image ${i+1} of ${selectedFiles.length}…`;
+
+      const storageRef = firebase.ref(storage, `submissions/${Date.now()}_${i}_${file.name}`);
+      await firebase.uploadBytes(storageRef, file);
+      const url = await firebase.getDownloadURL(storageRef);
+      imageUrls.push(url);
+    }
+    fill.style.width = '100%';
+    lbl.textContent = 'Saving submission…';
+
+    // Save to Firestore
+    await firebase.addDoc(firebase.collection(db, 'submissions'), {
+      artist, email, title, category,
+      description: desc,
+      price,
+      images: imageUrls,
+      status: 'pending',
+      submittedAt: firebase.serverTimestamp(),
+      shopifyProductId: null,
+    });
+
+    prog.classList.remove('show');
+    showAlert('submit-alert', `✓ Thank you, ${artist}! Your submission has been received and will be reviewed shortly.`, 'success');
+    // Reset form
+    ['f-artist','f-email','f-title','f-desc','f-price'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-category').value = '';
+    selectedFiles = [];
+    document.getElementById('file-previews').innerHTML = '';
+
+  } catch (err) {
+    console.error(err);
+    showAlert('submit-alert', 'Upload failed: ' + err.message, 'danger');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Submit Artwork';
+}
+
+// ══════════════════════════════════════════════════════
+// STATUS LOOKUP
+// ══════════════════════════════════════════════════════
+async function lookupStatus() {
+  const email = v('lookup-email').toLowerCase().trim();
+  const el = document.getElementById('status-result');
+  if (!email) return;
+  if (!db) { el.innerHTML = '<div class="alert warn">Still connecting to database…</div>'; return; }
+
+  el.innerHTML = '<div class="alert info">Searching…</div>';
+
+  try {
+    const snap = await firebase.getDocs(firebase.collection(db, 'submissions'));
+    const matches = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.email && data.email.toLowerCase() === email) matches.push({ id: d.id, ...data });
+    });
+
+    if (!matches.length) {
+      el.innerHTML = '<div class="alert warn">No submissions found for that email address.</div>';
+      return;
+    }
+
+    el.innerHTML = matches.map(m => {
+      const steps = buildTimeline(m.status);
+      return `<div class="card">
+        <div class="sub-header">
+          <div>
+            <div class="sub-title">${esc(m.title)}</div>
+            <div class="sub-artist">${esc(m.artist)} · ${esc(m.category)}</div>
+          </div>
+          <span class="badge badge-${m.status}">${m.status}</span>
+        </div>
+        ${steps}
+        ${m.status === 'pushed' ? '<div class="alert success">🎉 Your artwork has been listed in the Art for Cure shop!</div>' : ''}
+        ${m.status === 'rejected' ? '<div class="alert danger">Unfortunately your submission was not selected this time.</div>' : ''}
+      </div>`;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="alert danger">Error: ${err.message}</div>`;
+  }
+}
+
+function buildTimeline(status) {
+  const order = ['pending','approved','pushed'];
+  const labels = {
+    pending:  ['Submitted', 'Your artwork has been received.'],
+    approved: ['Approved', 'Selected for the shop.'],
+    pushed:   ['Listed', 'Now live on the Art for Cure store.'],
+  };
+  const idx = order.indexOf(status === 'rejected' ? 'pending' : status);
+  return `<div class="status-timeline">${order.map((s, i) => {
+    const dot = i < idx ? 'done' : i === idx ? 'active' : 'wait';
+    const icon = i < idx ? '✓' : i === idx ? '●' : '○';
+    return `<div class="timeline-step">
+      <div class="step-dot ${dot}">${icon}</div>
+      <div class="step-content">
+        <h4>${labels[s][0]}</h4>
+        <p>${i <= idx ? labels[s][1] : '—'}</p>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN — LOAD & RENDER
+// ══════════════════════════════════════════════════════
+async function loadSubmissions() {
+  const el = document.getElementById('admin-list');
+  if (!db) { el.innerHTML = '<div class="alert warn">Connecting to database…</div>'; return; }
+  el.innerHTML = '<div class="empty"><div class="icon">⏳</div><p>Loading…</p></div>';
+
+  try {
+    const snap = await firebase.getDocs(firebase.query(
+      firebase.collection(db, 'submissions'),
+      firebase.orderBy('submittedAt', 'desc')
+    ));
+    allSubmissions = [];
+    snap.forEach(d => allSubmissions.push({ id: d.id, ...d.data() }));
+    renderSubmissions(allSubmissions);
+  } catch (err) {
+    el.innerHTML = `<div class="alert danger">Failed to load: ${err.message}</div>`;
+  }
+}
+
+function renderSubmissions(list) {
+  const el = document.getElementById('admin-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">🖼</div><p>No submissions yet.</p></div>';
+    return;
+  }
+  el.innerHTML = list.map(s => {
+    const date = s.submittedAt?.toDate ? s.submittedAt.toDate().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : 'Unknown date';
+    const imgs = (s.images || []).map(url =>
+      `<img src="${url}" alt="" onclick="openLightbox('${url}')" title="Click to enlarge">`
+    ).join('');
+
+    let actions = '';
+    if (s.status === 'pending') {
+      actions = `
+        <button class="btn btn-success btn-sm" onclick="updateStatus('${s.id}','approved')">✓ Approve</button>
+        <button class="btn btn-danger btn-sm"  onclick="updateStatus('${s.id}','rejected')">✗ Reject</button>`;
+    } else if (s.status === 'approved') {
+      actions = `
+        <button class="btn btn-shopify btn-sm" onclick="pushToShopify('${s.id}')">🛍 Push to Shopify</button>
+        <button class="btn btn-danger btn-sm"  onclick="updateStatus('${s.id}','rejected')">✗ Reject</button>`;
+    } else if (s.status === 'pushed') {
+      actions = `<span style="color:#5a8a20;font-size:0.9rem">✓ Listed on Shopify</span>`;
+      if (s.shopifyProductId) {
+        actions += ` <a href="https://${getSettings().store}.myshopify.com/admin/products/${s.shopifyProductId}" target="_blank" class="btn btn-outline btn-sm" style="margin-left:6px">View Product ↗</a>`;
+      }
+    } else if (s.status === 'rejected') {
+      actions = `<button class="btn btn-outline btn-sm" onclick="updateStatus('${s.id}','pending')">↺ Restore</button>`;
+    }
+
+    return `<div class="submission-card status-${s.status}" id="card-${s.id}">
+      <div class="sub-header">
+        <div>
+          <div class="sub-title">${esc(s.title)}</div>
+          <div class="sub-artist">${esc(s.artist)}</div>
+        </div>
+        <span class="badge badge-${s.status}">${s.status}</span>
+      </div>
+      <div class="sub-meta">
+        <span>📁 ${esc(s.category)}</span>
+        <span>💰 £${(+s.price||0).toFixed(2)}</span>
+        <span>📅 ${date}</span>
+        <span>✉ ${esc(s.email)}</span>
+      </div>
+      ${s.description ? `<div class="sub-notes">${esc(s.description)}</div>` : ''}
+      ${imgs ? `<div class="sub-images">${imgs}</div>` : ''}
+      <div class="sub-actions" id="actions-${s.id}">${actions}</div>
+      <div id="msg-${s.id}"></div>
+    </div>`;
+  }).join('');
+}
+
+function filterSubs(filter, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const filtered = filter === 'all' ? allSubmissions : allSubmissions.filter(s => s.status === filter);
+  renderSubmissions(filtered);
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN — UPDATE STATUS
+// ══════════════════════════════════════════════════════
+async function updateStatus(id, newStatus) {
+  try {
+    await firebase.updateDoc(firebase.doc(db, 'submissions', id), { status: newStatus });
+    const sub = allSubmissions.find(s => s.id === id);
+    if (sub) sub.status = newStatus;
+    const card = document.getElementById('card-' + id);
+    if (card) {
+      card.className = `submission-card status-${newStatus}`;
+      card.querySelector('.badge').className = `badge badge-${newStatus}`;
+      card.querySelector('.badge').textContent = newStatus;
+      // Rebuild actions
+      const actEl = document.getElementById('actions-' + id);
+      if (newStatus === 'approved') {
+        actEl.innerHTML = `
+          <button class="btn btn-shopify btn-sm" onclick="pushToShopify('${id}')">🛍 Push to Shopify</button>
+          <button class="btn btn-danger btn-sm" onclick="updateStatus('${id}','rejected')">✗ Reject</button>`;
+      } else if (newStatus === 'rejected') {
+        actEl.innerHTML = `<button class="btn btn-outline btn-sm" onclick="updateStatus('${id}','pending')">↺ Restore</button>`;
+      }
+    }
+  } catch (err) {
+    alert('Error updating status: ' + err.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// SHOPIFY — TOKEN (client credentials via Worker)
+// ══════════════════════════════════════════════════════
+async function getShopifyToken() {
+  if (shopifyTokenCache.token && Date.now() < shopifyTokenCache.expiresAt - 60000) {
+    return shopifyTokenCache.token;
+  }
+  const { store, clientId, clientSecret, worker } = getSettings();
+  if (!clientId || !clientSecret || !store || !worker) {
+    throw new Error('Shopify credentials not configured. Please check Settings.');
+  }
+
+  const res = await fetch(worker + '/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, clientSecret, shop: store }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error('Token error: ' + JSON.stringify(data.error || data));
+
+  shopifyTokenCache.token = data.access_token;
+  shopifyTokenCache.expiresAt = Date.now() + (data.expires_in || 86400) * 1000;
+  return shopifyTokenCache.token;
+}
+
+async function shopifyRequest(path, method = 'GET', body = null) {
+  const { store, worker } = getSettings();
+  const token = await getShopifyToken();
+  const url = worker + '/proxy?path=' + encodeURIComponent(path);
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': token,
+      'X-Shopify-Store': store,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  try { return { status: res.status, data: JSON.parse(text) }; }
+  catch { throw new Error(`Shopify returned: ${text.substring(0,200)}`); }
+}
+
+// ══════════════════════════════════════════════════════
+// SHOPIFY — PUSH PRODUCT
+// ══════════════════════════════════════════════════════
+async function pushToShopify(id) {
+  const sub = allSubmissions.find(s => s.id === id);
+  if (!sub) return;
+  const msgEl = document.getElementById('msg-' + id);
+  const actEl = document.getElementById('actions-' + id);
+
+  actEl.innerHTML = '<button class="btn btn-shopify btn-sm" disabled><span class="spinner"></span> Pushing…</button>';
+  msgEl.innerHTML = '';
+
+  try {
+    // Build product images
+    const images = (sub.images || []).map(src => ({ src }));
+
+    const product = {
+      title: sub.title,
+      body_html: sub.description || '',
+      vendor: sub.artist,
+      product_type: sub.category,
+      tags: ['Art for Cure', sub.category, sub.artist].join(','),
+      variants: [{
+        price: (+sub.price || 0).toFixed(2),
+        inventory_management: null,
+        fulfillment_service: 'manual',
+      }],
+      images,
+    };
+
+    const { status, data } = await shopifyRequest('/admin/api/2025-01/products.json', 'POST', { product });
+
+    if (status !== 201 || !data.product) {
+      throw new Error(data.errors ? JSON.stringify(data.errors) : `Status ${status}`);
+    }
+
+    const productId = data.product.id;
+    await firebase.updateDoc(firebase.doc(db, 'submissions', id), {
+      status: 'pushed',
+      shopifyProductId: String(productId),
+    });
+    sub.status = 'pushed';
+    sub.shopifyProductId = String(productId);
+
+    const card = document.getElementById('card-' + id);
+    card.className = 'submission-card status-pushed';
+    card.querySelector('.badge').className = 'badge badge-pushed';
+    card.querySelector('.badge').textContent = 'pushed';
+    actEl.innerHTML = `<span style="color:#5a8a20;font-size:0.9rem">✓ Listed on Shopify</span>
+      <a href="https://${getSettings().store}.myshopify.com/admin/products/${productId}" target="_blank" class="btn btn-outline btn-sm" style="margin-left:6px">View Product ↗</a>`;
+    msgEl.innerHTML = '<div class="alert success" style="margin-top:10px">✓ Product created successfully in Shopify!</div>';
+
+  } catch (err) {
+    actEl.innerHTML = `<button class="btn btn-shopify btn-sm" onclick="pushToShopify('${id}')">🛍 Push to Shopify</button>`;
+    msgEl.innerHTML = `<div class="alert danger" style="margin-top:10px">✗ ${err.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════════════
+function getSettings() {
+  return {
+    store:        document.getElementById('s-store')?.value.trim().replace(/\.myshopify\.com.*/, '') || '',
+    clientId:     document.getElementById('s-client-id')?.value.trim() || '',
+    clientSecret: document.getElementById('s-client-secret')?.value.trim() || '',
+    worker:       (document.getElementById('s-worker')?.value.trim() || '').replace(/\/$/, ''),
+  };
+}
+
+async function loadSettingsFromDB() {
+  if (!db) return;
+  try {
+    const snap = await firebase.getDoc(firebase.doc(db, 'settings', SETTINGS_DOC_ID));
+    if (snap.exists()) {
+      const d = snap.data();
+      if (d.store)        document.getElementById('s-store').value        = d.store;
+      if (d.clientId)     document.getElementById('s-client-id').value    = d.clientId;
+      if (d.clientSecret) document.getElementById('s-client-secret').value = d.clientSecret;
+      if (d.worker)       document.getElementById('s-worker').value       = d.worker;
+    }
+  } catch (e) { /* settings doc may not exist yet */ }
+}
+
+async function saveSettings() {
+  if (!db) return;
+  const settings = getSettings();
+  try {
+    await firebase.updateDoc(firebase.doc(db, 'settings', SETTINGS_DOC_ID), settings).catch(() =>
+      firebase.addDoc(firebase.collection(db, 'settings'), { ...settings, _id: SETTINGS_DOC_ID })
+        .catch(() => firebase.updateDoc(firebase.doc(db, 'settings', SETTINGS_DOC_ID), settings))
+    );
+    // Proper upsert
+    const { setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    await setDoc(firebase.doc(db, 'settings', SETTINGS_DOC_ID), settings, { merge: true });
+    shopifyTokenCache = { token: null, expiresAt: 0 }; // clear cached token
+    showAlert('shopify-status', '✓ Settings saved.', 'success', true);
+  } catch (err) {
+    showAlert('shopify-status', 'Save failed: ' + err.message, 'danger', true);
+  }
+}
+
+async function testShopify() {
+  const el = document.getElementById('shopify-status');
+  el.innerHTML = '<div class="connection-status testing">⏳ Testing connection…</div>';
+  shopifyTokenCache = { token: null, expiresAt: 0 };
+  try {
+    const { status, data } = await shopifyRequest('/admin/api/2025-01/shop.json');
+    if (status === 200 && data.shop) {
+      el.innerHTML = `<div class="connection-status ok">✓ Connected to <strong>${data.shop.name}</strong> (${data.shop.domain})</div>`;
+    } else {
+      throw new Error(`Shopify error ${status}: ${JSON.stringify(data.errors || data)}`);
+    }
+  } catch (err) {
+    el.innerHTML = `<div class="connection-status fail">✗ ${err.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// LIGHTBOX
+// ══════════════════════════════════════════════════════
+function openLightbox(url) {
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// ══════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════
+function v(id) { return document.getElementById(id)?.value.trim() || ''; }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showAlert(id, msg, type, statusStyle = false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (statusStyle) {
+    el.innerHTML = `<div class="connection-status ${type === 'success' ? 'ok' : 'fail'}">${msg}</div>`;
+  } else {
+    el.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+  }
+}
+</script>
+</body>
+</html>
