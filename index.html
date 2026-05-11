@@ -172,11 +172,65 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
   .main { padding: 1.5rem 1rem 3rem; }
   .img-previews { grid-template-columns: repeat(2, 1fr); }
 }
+/* ── Auth ── */
+#login-screen { position:fixed; inset:0; background:var(--gray-bg); display:flex; align-items:center; justify-content:center; z-index:500; }
+.login-box { background:var(--white); border:1px solid var(--gray-border); border-radius:16px; padding:2.5rem 2rem; width:100%; max-width:400px; box-shadow:0 4px 24px rgba(232,66,122,0.1); }
+.login-logo { display:flex; align-items:center; gap:12px; margin-bottom:2rem; }
+.login-logo-mark { width:48px; height:48px; background:var(--pink); border-radius:10px; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:14px; flex-shrink:0; }
+.login-title { font-size:20px; font-weight:700; color:var(--dark); }
+.login-sub { font-size:12px; color:var(--gray-text); margin-top:2px; }
+.login-field { display:flex; flex-direction:column; gap:5px; margin-bottom:1rem; }
+.login-field label { font-size:11px; font-weight:700; color:var(--gray-text); text-transform:uppercase; letter-spacing:0.6px; }
+.login-field input { font-family:var(--font); font-size:14px; color:var(--dark); border:1px solid var(--gray-border); border-radius:7px; padding:10px 12px; outline:none; transition:border-color 0.15s,box-shadow 0.15s; }
+.login-field input:focus { border-color:var(--pink); box-shadow:0 0 0 3px rgba(232,66,122,0.1); }
+.login-forgot { font-size:12px; color:var(--pink); cursor:pointer; text-decoration:underline; background:none; border:none; font-family:var(--font); padding:0; margin-top:-4px; margin-bottom:1rem; display:inline-block; }
+.user-chip { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--gray-text); }
+.user-chip strong { color:var(--dark); }
+.user-chip-dot { width:8px; height:8px; background:var(--success); border-radius:50%; }
+/* User management */
+.user-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--gray-border); gap:1rem; }
+.user-row:last-child { border-bottom:none; }
+.user-name { font-size:14px; font-weight:700; color:var(--dark); }
+.user-email { font-size:12px; color:var(--gray-text); margin-top:1px; }
+.user-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; }
+.user-badge-admin { background:var(--pink-light); color:var(--pink-dark); border:1px solid var(--pink-mid); }
+.user-badge-artist { background:var(--success-bg); color:var(--success); border:1px solid var(--success-border); }
+.user-badge-disabled { background:var(--gray-bg); color:var(--gray-text); border:1px solid var(--gray-border); }
+/* Archive & Orders */
+.order-row { background:var(--white); border:1px solid var(--gray-border); border-radius:11px; padding:1.25rem; margin-bottom:0.75rem; transition:box-shadow 0.15s; }
+.order-row.unread { border-left:4px solid var(--pink); }
+.order-row.unread .order-piece { font-weight:700; color:var(--dark); }
+.order-row.unread .order-artist { font-weight:700; color:var(--dark); }
+.order-piece { font-size:15px; color:var(--dark); }
+.order-artist { font-size:13px; color:var(--gray-text); margin-top:2px; }
+.order-meta { display:flex; flex-wrap:wrap; gap:14px; margin-top:8px; font-size:12px; color:var(--gray-text); }
+.order-meta strong { color:var(--dark); }
+.order-buyer { margin-top:10px; padding-top:10px; border-top:1px solid var(--gray-border); font-size:13px; color:var(--gray-text); line-height:1.7; }
+.order-actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.btn-email { background:#1a73e8; color:white; border:none; }
+.btn-email:hover { background:#1558c0; }
+.archive-btn { background:none; border:1px solid var(--gray-border); color:var(--gray-text); font-size:12px; padding:5px 12px; border-radius:6px; cursor:pointer; font-family:var(--font); }
+.archive-btn:hover { border-color:var(--pink-mid); color:var(--pink-dark); }
 </style>
 </head>
 <body>
 
-<div id="app">
+<!-- Login screen -->
+<div id="login-screen" style="display:none;">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-logo-mark">AFC</div>
+      <div><div class="login-title">Art for Cure</div><div class="login-sub">Artist Submission Portal</div></div>
+    </div>
+    <div class="login-field"><label>Email Address</label><input id="login-email" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+    <div class="login-field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+    <button class="login-forgot" onclick="doForgotPassword()">Forgot password?</button>
+    <div id="login-error" style="min-height:20px;margin-bottom:0.75rem;"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;" id="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
   <div class="top-bar">
     <div class="logo-area">
       <div class="logo-fallback">AFC</div>
@@ -185,8 +239,15 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div class="nav-tabs">
       <button class="nav-tab active" id="tab-submit" onclick="showTab('submit')">Submit Work</button>
       <button class="nav-tab" id="tab-artist" onclick="showTab('artist')">My Submission</button>
-      <button class="nav-tab" id="tab-admin" onclick="showTab('admin')">Admin Review</button>
-      <button class="nav-tab" id="tab-settings" onclick="showTab('settings')">⚙ Settings</button>
+      <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
+      <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
+      <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
+      <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
+    </div>
+    <div class="user-chip">
+      <div class="user-chip-dot"></div>
+      <span id="user-chip-name"><strong>—</strong></span>
+      <button class="btn btn-sm btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="doSignOut()">Sign out</button>
     </div>
   </div>
   <div class="main">
@@ -194,6 +255,8 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-artist" style="display:none;"></div>
     <div id="view-admin" style="display:none;"></div>
     <div id="view-settings" style="display:none;"></div>
+    <div id="view-orders" style="display:none;"></div>
+    <div id="view-archive" style="display:none;"></div>
   </div>
 </div>
 
@@ -214,6 +277,7 @@ window.addEventListener('unhandledrejection', e => {
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, setDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw55o",
@@ -226,6 +290,11 @@ const firebaseConfig = {
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const auth = getAuth(app);
+
+// ── Current user state ──
+let _currentUser = null;   // Firebase user object
+let _isAdmin = false;      // true if user has admin role in Firestore
 
 // ── EmailJS — loaded dynamically from Firebase settings ──
 let _emailSettings = null;
@@ -272,11 +341,13 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','admin','settings'].forEach(t=>{
+  ['submit','artist','admin','orders','archive','settings'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
-    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+    const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
   if(tab==='admin') loadAdmin();
+  if(tab==='orders') loadOrders();
+  if(tab==='archive') loadArchive();
   if(tab==='settings') loadSettings();
 };
 
@@ -792,7 +863,7 @@ async function loadAdmin(){
   v.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading…</div>';
   try{
     const snap=await getDocs(query(collection(db,'submissions'),orderBy('createdAt','desc')));
-    _adminSubs=[]; snap.forEach(d=>_adminSubs.push({id:d.id,...d.data()}));
+    _adminSubs=[]; snap.forEach(d=>{ const sub={id:d.id,...d.data()}; if(!sub.archived) _adminSubs.push(sub); });
     renderAdmin();
   }catch(err){v.innerHTML=`<div class="alert alert-danger">Error: ${err.message}</div>`;}
 }
@@ -880,6 +951,7 @@ function renderAdmin(){
         ${sub.status==='approved'&&!sub.shopifyId?`<button class="btn btn-sm btn-shopify" onclick="showShopifyModal('${sub.id}')">→ Push to Shopify</button>`:''}
         ${sub.shopifyId?`<span style="font-size:12px;color:var(--success);font-weight:700">✓ Live on Shopify (${sub.shopifyId})</span>`:''}
         <button class="btn btn-sm" style="background:#0f9d58;color:white" onclick="pushToSheetsBtn('${sub.id}')">📊 Push to Sheet</button>
+        <button class="archive-btn" onclick="archiveSubmission('${sub.id}')">📁 Archive</button>
       </div>
     </div>`;
   });
@@ -1041,6 +1113,19 @@ function renderSettings(s, intg={}) {
     <div id="settings-save-status" style="font-size:13px;color:var(--success);text-align:right;min-height:20px;margin-top:-1rem"></div>
 
     <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> Orders Email Settings</div>
+      <div class="settings-hint" style="margin-bottom:1rem;line-height:1.6">
+        When emailing an artist about a sale, this address will be CC'd on every email.
+      </div>
+      <div class="form-row single">
+        <div class="field">
+          <label>CC Email Address for Order Notifications</label>
+          <input id="orders-cc-email" value="${esc(intg.ordersCcEmail||'')}" placeholder="sales@artforcure.org.uk" onchange="saveIntegrationSettings()"/>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-title"><span class="pink-dot"></span> Google Sheets Integration</div>
       <div class="settings-hint" style="margin-bottom:1rem;line-height:1.6">
         When you click <strong>Push to Google Sheet</strong> on a submission, a new row is added to your spreadsheet.
@@ -1098,10 +1183,40 @@ function renderSettings(s, intg={}) {
     </div>
 
     <div id="integration-save-status" style="font-size:13px;color:var(--success);text-align:right;min-height:20px;margin-top:-1rem"></div>
+
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> User Management</div>
+      <div class="settings-hint" style="margin-bottom:1.25rem;line-height:1.6">
+        Create accounts for artists so they can log in to submit and manage their work.
+        Artists only see their own submissions — only admins see all submissions and settings.
+      </div>
+
+      <div class="card" style="background:var(--gray-bg);border:1px solid var(--gray-border);margin-bottom:1.25rem;">
+        <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:1rem;">Add New Artist Account</div>
+        <div class="form-row">
+          <div class="field"><label>Full Name</label><input id="new-user-name" placeholder="e.g. Jane Smith"/></div>
+          <div class="field"><label>Email Address</label><input id="new-user-email" type="email" placeholder="jane@example.com"/></div>
+        </div>
+        <div class="form-row single">
+          <div class="field">
+            <label>Temporary Password</label>
+            <input id="new-user-password" type="password" placeholder="Min. 6 characters — artist should change this on first login"/>
+          </div>
+        </div>
+        <div id="new-user-error" style="min-height:16px;"></div>
+        <div style="margin-top:0.75rem">
+          <button class="btn btn-primary btn-sm" id="create-user-btn" onclick="createArtistAccount()">Create Account</button>
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:0.75rem;">Existing Users</div>
+      <div id="user-management-section"></div>
+    </div>
   `;
   window._currentSettings = s;
   window._currentRecipients = [...recipientList];
   window._currentIntegrations = intg;
+  setTimeout(renderUserManagement, 100);
 }
 
 async function saveEmailSetting() {
@@ -1188,7 +1303,7 @@ async function saveIntegrationSettings() {
   const shopifyClientId = (document.getElementById('shopify-client-id')||{}).value||'';
   const shopifyClientSecret = (document.getElementById('shopify-client-secret')||{}).value||'';
   const shopifyWorker = ((document.getElementById('shopify-worker')||{}).value||'').replace(/\/$/, '');
-  const data = { sheetsUrl, shopifyStore, shopifyClientId, shopifyClientSecret, shopifyWorker };
+  const data = { sheetsUrl, shopifyStore, shopifyClientId, shopifyClientSecret, shopifyWorker, ordersCcEmail };
   window._currentIntegrations = data;
   // Clear cached token whenever credentials change
   window._shopifyTokenCache = { token: null, expiresAt: 0 };
@@ -1433,19 +1548,430 @@ window.testStorageConnection = async function(){
   }
 };
 
-// ── BOOT ──
-setTimeout(()=>{
+// ─────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errDiv = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  if(!email || !password) { errDiv.innerHTML='<div class="alert alert-warn" style="margin:0">Please enter your email and password.</div>'; return; }
+  btn.disabled=true; btn.textContent='Signing in…';
+  errDiv.innerHTML='';
   try {
-    renderSubmit();
+    await signInWithEmailAndPassword(auth, email, password);
+    // onAuthStateChanged handles the rest
   } catch(e) {
-    document.getElementById('view-submit').innerHTML =
-      '<div class="alert alert-danger" style="margin:2rem">Error rendering submit form: '+e.message+'<br><small>'+e.stack+'</small></div>';
+    let msg = 'Invalid email or password.';
+    if(e.code==='auth/too-many-requests') msg='Too many attempts — try again shortly.';
+    errDiv.innerHTML='<div class="alert alert-danger" style="margin:0">'+msg+'</div>';
+    btn.disabled=false; btn.textContent='Sign In';
+  }
+};
+
+window.doSignOut = async function() {
+  await signOut(auth);
+};
+
+window.doForgotPassword = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  if(!email) { alert('Enter your email address first.'); return; }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    document.getElementById('login-error').innerHTML='<div class="alert alert-success" style="margin:0">✓ Password reset email sent. Check your inbox.</div>';
+  } catch(e) { alert('Could not send reset email: '+e.message); }
+};
+
+async function checkAdminRole(uid) {
+  try {
+    const snap = await getDocs(query(collection(db,'users'), where('uid','==',uid)));
+    if(!snap.empty) { let r; snap.forEach(d=>{r=d.data();}); return r && (r.role==='admin' || r.role==='superadmin'); }
+  } catch(e) {}
+  return false;
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if(user) {
+    _currentUser = user;
+    _isAdmin = await checkAdminRole(user.uid);
+
+    // Show app, hide login
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='';
+
+    // Show/hide admin tabs
+    document.getElementById('tab-admin').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-orders').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-archive').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-settings').style.display = _isAdmin ? '' : 'none';
+
+    // User chip
+    const chipName = document.getElementById('user-chip-name');
+    if(chipName) chipName.innerHTML = '<strong>'+esc(user.displayName||user.email)+'</strong>';
+
+    // Reset login form
+    document.getElementById('login-email').value='';
+    document.getElementById('login-password').value='';
+    document.getElementById('login-error').innerHTML='';
+    const btn=document.getElementById('login-btn'); if(btn){btn.disabled=false;btn.textContent='Sign In';}
+
+    // Boot app
+    try { renderSubmit(); } catch(e) { console.error(e); }
+    try { renderArtistPortal(); } catch(e) { console.error(e); }
+    loadEmailSettings().catch(e => console.warn('Settings load error:', e));
+
+    // If artist (not admin), go straight to submit tab
+    if(!_isAdmin) showTab('submit');
+    else showTab('admin');
+
+  } else {
+    _currentUser = null;
+    _isAdmin = false;
+    document.getElementById('login-screen').style.display='';
+    document.getElementById('app').style.display='none';
+  }
+});
+
+// ─────────────────────────────────────────
+// USER MANAGEMENT (admin only)
+// ─────────────────────────────────────────
+window.renderUserManagement = async function() {
+  const el = document.getElementById('user-management-section');
+  if(!el) return;
+  el.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading users…</div>';
+  try {
+    const snap = await getDocs(collection(db,'users'));
+    const users = []; snap.forEach(d=>users.push({docId:d.id,...d.data()}));
+    if(!users.length) { el.innerHTML='<div class="empty-state"><h3>No users yet.</h3></div>'; return; }
+    el.innerHTML = users.map(u => `
+      <div class="user-row">
+        <div>
+          <div class="user-name">${esc(u.name||'—')}</div>
+          <div class="user-email">${esc(u.email||'—')}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="user-badge ${(u.role==='admin'||u.role==='superadmin')?'user-badge-admin':u.disabled?'user-badge-disabled':'user-badge-artist'}">${u.role==='superadmin'?'Super Admin':u.role==='admin'?'Admin':u.disabled?'Disabled':'Artist'}</span>
+          ${u.role!=='superadmin'?`
+            ${u.role!=='admin'?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','admin')">Make Admin</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','artist')">Remove Admin</button>`}
+            <button class="btn btn-sm btn-secondary" onclick="toggleUserDisabled('${u.docId}',${!!u.disabled})">${u.disabled?'Enable':'Disable'}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.docId}','${esc(u.email)}')">Remove</button>
+          `:''}
+        </div>
+      </div>`).join('');
+  } catch(e) { el.innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+};
+
+window.createArtistAccount = async function() {
+  const name = (document.getElementById('new-user-name')||{}).value||'';;
+  const email = (document.getElementById('new-user-email')||{}).value||'';
+  const password = (document.getElementById('new-user-password')||{}).value||'';
+  const errDiv = document.getElementById('new-user-error');
+  if(!name||!email||!password) { errDiv.innerHTML='<div class="alert alert-warn">Please fill in all fields.</div>'; return; }
+  if(password.length < 6) { errDiv.innerHTML='<div class="alert alert-warn">Password must be at least 6 characters.</div>'; return; }
+  const btn = document.getElementById('create-user-btn');
+  btn.disabled=true; btn.textContent='Creating…';
+  errDiv.innerHTML='';
+  try {
+    // Create Firebase Auth account
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    // Save profile to Firestore users collection
+    await setDoc(doc(db,'users',cred.user.uid), { uid:cred.user.uid, name, email:email.toLowerCase(), role:'artist', disabled:false, createdAt:nowStr() });
+    // Sign back in as admin (creating a user signs in as them)
+    document.getElementById('new-user-name').value='';
+    document.getElementById('new-user-email').value='';
+    document.getElementById('new-user-password').value='';
+    errDiv.innerHTML='<div class="alert alert-success">✓ Account created for '+esc(name)+'. They can now log in.</div>';
+    renderUserManagement();
+  } catch(e) {
+    let msg = e.message;
+    if(e.code==='auth/email-already-in-use') msg='That email already has an account.';
+    errDiv.innerHTML='<div class="alert alert-danger">✗ '+msg+'</div>';
+  }
+  btn.disabled=false; btn.textContent='Create Account';
+};
+
+window.toggleUserDisabled = async function(docId, currentlyDisabled) {
+  try {
+    await updateDoc(doc(db,'users',docId), { disabled: !currentlyDisabled });
+    renderUserManagement();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+window.deleteUser = async function(docId, email) {
+  if(!confirm('Remove access for '+email+'? This deletes their portal account but keeps their submissions.')) return;
+  try {
+    await updateDoc(doc(db,'users',docId), { disabled:true, deletedAt:nowStr() });
+    renderUserManagement();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+window.setUserRole = async function(docId, role) {
+  try {
+    await updateDoc(doc(db,'users',docId), { role });
+    renderUserManagement();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+// ─────────────────────────────────────────
+// ARCHIVE
+// ─────────────────────────────────────────
+window.archiveSubmission = async function(id) {
+  if(!confirm('Archive this submission? It will move to the Archive tab and be hidden from Admin Review.')) return;
+  const now = nowStr();
+  const sub = _adminSubs.find(s=>s.id===id);
+  const newLog = [...(sub?.auditLog||[]), {ts:now, by:'Admin', note:'Archived'}];
+  try {
+    await updateDoc(doc(db,'submissions',id), { archived:true, archivedAt:now, auditLog:newLog });
+    loadAdmin();
+  } catch(e) { alert('Error archiving: '+e.message); }
+};
+
+async function loadArchive() {
+  const v = document.getElementById('view-archive');
+  v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading archive…</div>';
+  try {
+    const snap = await getDocs(query(collection(db,'submissions'), where('archived','==',true), orderBy('archivedAt','desc')));
+    const subs = []; snap.forEach(d=>subs.push({id:d.id,...d.data()}));
+    if(!subs.length) { v.innerHTML='<div class="page-title">Archive</div><div class="empty-state"><h3>No archived submissions yet.</h3></div>'; return; }
+    let html = '<div class="page-title">Archive</div><div class="page-sub">Archived submissions — hidden from Admin Review.</div>';
+    subs.forEach(sub=>{
+      const price=parseFloat(sub.piece?.price)||0, comm=parseFloat(sub.commission)||40;
+      html += `<div class="sub-card">
+        <div class="sub-header">
+          <div>
+            <div class="sub-artist">${esc(sub.artist?.name)}</div>
+            <div class="sub-piece">${esc(sub.piece?.name)} · ${sub.category}</div>
+            <div class="sub-meta">
+              <div class="sub-meta-item"><strong>${fmt(price)}</strong></div>
+              <div class="sub-meta-item">Archived ${sub.archivedAt||''}</div>
+            </div>
+          </div>
+          <span class="badge badge-${sub.status}">${sub.status?.charAt(0).toUpperCase()+sub.status?.slice(1)}</span>
+        </div>
+        <div class="admin-actions" style="padding-top:10px;border-top:1px solid var(--gray-border);margin-top:10px;">
+          <button class="btn btn-sm btn-secondary" onclick="unarchiveSubmission('${sub.id}')">↩ Restore</button>
+        </div>
+      </div>`;
+    });
+    v.innerHTML = html;
+  } catch(e) { v.innerHTML=`<div class="alert alert-danger">Error: ${e.message}</div>`; }
+}
+
+window.unarchiveSubmission = async function(id) {
+  try {
+    await updateDoc(doc(db,'submissions',id), { archived:false, archivedAt:null });
+    loadArchive();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+// ─────────────────────────────────────────
+// ORDERS (from Shopify via Worker)
+// ─────────────────────────────────────────
+async function loadOrders() {
+  const v = document.getElementById('view-orders');
+  v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading orders from Shopify…</div>';
+  const intg = window._currentIntegrations || {};
+  if(!intg.shopifyStore || !intg.shopifyClientId || !intg.shopifyClientSecret) {
+    v.innerHTML = '<div class="page-title">Orders</div><div class="alert alert-warn" style="margin-top:1rem">Shopify credentials not configured — go to Settings first.</div>'; return;
   }
   try {
-    renderArtistPortal();
-  } catch(e) { console.error('renderArtistPortal error:', e); }
-  loadEmailSettings().catch(e => console.warn('Settings load error:', e));
-}, 0);
+    const token = await getShopifyToken();
+    const worker = (intg.shopifyWorker||'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/,'');
+    const store = intg.shopifyStore;
+    // Fetch orders with customer and line item details
+    const res = await fetch(worker+'/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,created_at,financial_status,customer,line_items,total_price', {
+      headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+    });
+    if(!res.ok) { const e=await res.json(); throw new Error('Shopify '+res.status+': '+JSON.stringify(e.errors||e)); }
+    const data = await res.json();
+    const orders = data.orders||[];
+
+    // Load acknowledged order IDs from Firestore
+    const ackSnap = await getDocs(collection(db,'order_acknowledgements'));
+    const acked = new Set(); ackSnap.forEach(d=>acked.add(d.id));
+
+    if(!orders.length) { v.innerHTML='<div class="page-title">Orders</div><div class="empty-state"><h3>No orders yet.</h3></div>'; return; }
+
+    let html = `<div class="page-title">Orders</div>
+      <div class="page-sub">Orders from Shopify. Bold = unacknowledged. Click Acknowledged once reviewed.</div>`;
+
+    for(const order of orders) {
+      const customer = order.customer||{};
+      const buyerName = [customer.first_name,customer.last_name].filter(Boolean).join(' ')||'Unknown';
+      const buyerEmail = customer.email||'';
+      const buyerPhone = customer.phone||customer.default_address?.phone||'';
+      const addr = customer.default_address||{};
+      const buyerAddr = [addr.address1,addr.address2,addr.city,addr.province,addr.zip,addr.country].filter(Boolean).join(', ');
+
+      for(const item of (order.line_items||[])) {
+        const orderId = order.id+'_'+item.id;
+        const isAcked = acked.has(orderId);
+        const price = parseFloat(item.price)||0;
+        // Try to find submission in Firebase to get commission/cost
+        // Artist is vendor on the Shopify product
+        const artist = item.vendor||'';
+        // Commission — default 40% unless we can look it up
+        const comm = 40;
+        const cos = price*((100-comm)/100);
+        const afc = price - cos;
+
+        // Build email body
+        const emailSubject = encodeURIComponent('Sale of '+item.title+' by Art for Cure');
+        const emailBody = encodeURIComponent(
+          'Dear '+artist+',
+
+'+
+          'We have sold '+item.title+' to '+buyerName+' for £'+price.toFixed(2)+'.
+
+'+
+          'Their contact details are as follows:
+'+
+          'Email: '+buyerEmail+'
+'+
+          'Mobile: '+buyerPhone+'
+'+
+          'Address: '+buyerAddr+'
+
+'+
+          'This will result in a payment to you of £'+cos.toFixed(2)+' once this order is fulfilled.
+'+
+          'Art for Cure commission will be £'+afc.toFixed(2)+'.
+
+'+
+          'Best Regards,
+AFC Sales Team'
+        );
+
+        html += `<div class="order-row ${isAcked?'':'unread'}" id="order-${orderId}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+            <div>
+              <div class="order-piece">${esc(item.title)}</div>
+              <div class="order-artist">Artist: ${esc(artist)} · Order ${esc(order.name)} · ${new Date(order.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div>
+              <div class="order-meta">
+                <span><strong>£${price.toFixed(2)}</strong> price achieved</span>
+                <span><strong style="color:var(--success)">£${cos.toFixed(2)}</strong> cost of sale</span>
+                <span><strong style="color:var(--pink)">£${afc.toFixed(2)}</strong> AFC commission</span>
+              </div>
+            </div>
+            ${isAcked?'<span style="font-size:12px;color:var(--success);font-weight:700;">✓ Acknowledged</span>':''}
+          </div>
+          <div class="order-buyer">
+            <strong>Buyer:</strong> ${esc(buyerName)}<br>
+            ${buyerEmail?'<strong>Email:</strong> '+esc(buyerEmail)+'<br>':''}
+            ${buyerPhone?'<strong>Mobile:</strong> '+esc(buyerPhone)+'<br>':''}
+            ${buyerAddr?'<strong>Address:</strong> '+esc(buyerAddr):''}
+          </div>
+          <div class="order-actions">
+            ${!isAcked?`<button class="btn btn-sm btn-success" onclick="acknowledgeOrder('${orderId}')">✓ Acknowledged</button>`:''}
+            <button class="btn btn-sm btn-email" onclick="emailArtist('${orderId}','${encodeURIComponent(artist)}','${encodeURIComponent(item.title)}','${encodeURIComponent(buyerName)}','${encodeURIComponent(buyerEmail)}','${encodeURIComponent(buyerPhone)}','${encodeURIComponent(buyerAddr)}','${price.toFixed(2)}','${cos.toFixed(2)}','${afc.toFixed(2)}')">✉ Email Artist</button>
+          </div>
+        </div>`;
+      }
+    }
+    v.innerHTML = html;
+  } catch(e) {
+    v.innerHTML = `<div class="page-title">Orders</div><div class="alert alert-danger" style="margin-top:1rem">✗ ${e.message}</div>`;
+  }
+}
+
+window.acknowledgeOrder = async function(orderId) {
+  try {
+    await setDoc(doc(db,'order_acknowledgements',orderId), { ackedAt:nowStr(), ackedBy:_currentUser?.email||'' });
+    loadOrders();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+window.emailArtist = function(orderId, artist, piece, buyerName, buyerEmail, buyerPhone, buyerAddr, price, cos, afc) {
+  // Decode URL-encoded params
+  const d = decodeURIComponent;
+  const artistDec = d(artist), pieceDec = d(piece), buyerNameDec = d(buyerName);
+  const buyerEmailDec = d(buyerEmail), buyerPhoneDec = d(buyerPhone), buyerAddrDec = d(buyerAddr);
+
+  // Get artist email from submissions — look up by artist name
+  // Show editable email modal
+  const body =
+    'Dear '+artistDec+',
+
+'+
+    'We have sold '+pieceDec+' to '+buyerNameDec+' for £'+price+'.
+
+'+
+    'Their contact details are as follows:
+'+
+    'Email: '+buyerEmailDec+'
+'+
+    'Mobile: '+buyerPhoneDec+'
+'+
+    'Address: '+buyerAddrDec+'
+
+'+
+    'This will result in a payment to you of £'+cos+' once this order is fulfilled.
+'+
+    'Art for Cure commission will be £'+afc+'.
+
+'+
+    'Best Regards,
+AFC Sales Team';
+
+  // Show editable modal
+  const existing = document.getElementById('email-artist-modal');
+  if(existing) existing.remove();
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="email-artist-modal" onclick="if(event.target.id==='email-artist-modal')document.getElementById('email-artist-modal').remove()">
+      <div class="modal" style="max-width:600px;">
+        <h2>✉ Email Artist</h2>
+        <p style="font-size:12px;margin-bottom:0.5rem;">Edit the email below then click Send. Your email client will open.</p>
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>To (Artist Email)</label>
+          <input id="ea-to" placeholder="artist@example.com — look up manually if needed"/>
+        </div>
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>CC</label>
+          <input id="ea-cc" value="${esc((window._currentIntegrations||{}).ordersCcEmail||'')}" placeholder="cc@artforcure.org.uk"/>
+        </div>
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>Subject</label>
+          <input id="ea-subject" value="Sale of ${esc(pieceDec)} by Art for Cure"/>
+        </div>
+        <div class="field" style="margin-bottom:1rem;">
+          <label>Body</label>
+          <textarea id="ea-body" style="min-height:220px;font-size:13px;">${esc(body)}</textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="document.getElementById('email-artist-modal').remove()">Cancel</button>
+          <button class="btn btn-email" onclick="sendArtistEmail()">Open in Email Client →</button>
+        </div>
+      </div>
+    </div>`);
+
+  // Try to auto-fill artist email from Firestore submissions
+  getDocs(query(collection(db,'submissions'), where('artist.name','==',artistDec))).then(snap=>{
+    if(!snap.empty) {
+      let email=''; snap.forEach(d=>{ if(!email) email=d.data().artist?.email||''; });
+      const toField = document.getElementById('ea-to');
+      if(toField && email) toField.value = email;
+    }
+  }).catch(()=>{});
+};
+
+window.sendArtistEmail = function() {
+  const to = (document.getElementById('ea-to')||{}).value||'';
+  const cc = (document.getElementById('ea-cc')||{}).value||'';
+  const subject = (document.getElementById('ea-subject')||{}).value||'';
+  const body = (document.getElementById('ea-body')||{}).value||'';
+  if(!to) { alert('Please enter the artist's email address.'); return; }
+  let mailto = 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  if(cc) mailto += '&cc='+encodeURIComponent(cc);
+  window.open(mailto, '_blank');
+  document.getElementById('email-artist-modal').remove();
+};
+
+// ── BOOT — wait for auth state before doing anything ──
+// (onAuthStateChanged above handles everything)
+// Show login screen immediately while Firebase initialises
+document.getElementById('login-screen').style.display='';
 </script>
 </body>
 </html>
