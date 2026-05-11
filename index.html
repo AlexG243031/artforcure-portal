@@ -434,7 +434,7 @@ async function saveArtistProfile(artist){
 // SUBMIT VIEW
 // ─────────────────────────────────────────
 function defaultState(){
-  return{step:1,artist:{name:'',email:'',mobile:'',website:'',bio:''},profileFound:false,category:'',
+  return{step:1,artist:{name:'',email:'',mobile:'',website:'',bio:'',photoUrl:''},profileFound:false,category:'',
     piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}};
 }
 
@@ -482,6 +482,26 @@ function renderSubmit(state){
         <textarea id="f-bio" oninput="updateWordCount(this)">${esc(artist.bio)}</textarea>
         <div class="word-count ${words>100?'over':''}" id="wc-display">${words}/100 words</div>
         <span class="hint">Saved to your profile — won't need re-entering next time.</span>
+      </div>
+    </div>
+    <div class="form-row single">
+      <div class="field">
+        <label>Artist Photo — optional</label>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:4px;">
+          ${(artist.photoUrl)?
+            `<img src="${esc(artist.photoUrl)}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--pink-mid);flex-shrink:0;" alt="Profile photo"/>`:
+            `<div style="width:72px;height:72px;border-radius:50%;background:var(--pink-light);border:2px dashed var(--pink-mid);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👤</div>`
+          }
+          <div>
+            <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:var(--white);color:var(--pink);border:1.5px solid var(--pink);border-radius:6px;padding:6px 14px;font-family:var(--font);font-size:12px;font-weight:700;">
+              ${(artist.photoUrl)?'Change Photo':'Upload Photo'}
+              <input type="file" accept="image/*" style="display:none;" onchange="handleArtistPhoto(this.files[0])"/>
+            </label>
+            ${(artist.photoUrl)?`<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border);margin-left:6px;" onclick="removeArtistPhoto()">Remove</button>`:''}
+            <div class="hint" style="margin-top:6px;">Square photo works best. Max 5MB.</div>
+            <div id="artist-photo-status" style="font-size:12px;color:var(--success);margin-top:2px;"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end">
@@ -573,7 +593,7 @@ window.checkProfile = async function(){
   const profile=await lookupArtistProfile(email);
   if(profile){
     const s=window._submitState;
-    s.artist={name:profile.name||'',email:profile.email||email,mobile:profile.mobile||'',website:profile.website||'',bio:profile.bio||''};
+    s.artist={name:profile.name||'',email:profile.email||email,mobile:profile.mobile||'',website:profile.website||'',bio:profile.bio||'',photoUrl:profile.photoUrl||''};
     s.profileFound=true; renderSubmit(s);
   } else {
     const s=window._submitState; s.artist.email=email; renderSubmit(s);
@@ -608,25 +628,6 @@ window.handleArtistPhoto = async function(file) {
 window.removeArtistPhoto = function() {
   window._submitState.artist.photoUrl = '';
   renderSubmit(window._submitState);
-};
-window.handleArtistPhoto = async function(file) {
-  if(!file) return;
-  if(file.size > 5*1024*1024) { alert('Photo must be under 5MB.'); return; }
-  const status = document.getElementById('artist-photo-status');
-  if(status) status.textContent = 'Uploading…';
-  try {
-    const email = (document.getElementById('f-email')||{}).value.trim()||'unknown';
-    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
-    const sRef = ref(storage, 'artists/'+email.replace(/[^a-z0-9]/gi,'_')+'/photo.'+ext);
-    const buf = await file.arrayBuffer();
-    const snap = await uploadBytes(sRef, buf, {contentType: file.type||'image/jpeg'});
-    const url = await getDownloadURL(snap.ref);
-    window._submitState.artist.photoUrl = url;
-    if(status) status.textContent = '✓ Photo uploaded';
-    renderSubmit(window._submitState);
-  } catch(e) {
-    if(status) status.textContent = '✗ Upload failed: '+e.message;
-  }
 };
 window.removeArtistPhoto = function() {
   window._submitState.artist.photoUrl = '';
