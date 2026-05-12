@@ -1565,6 +1565,7 @@ async function pushToShopify(sub) {
     metafields: [
       { namespace:'artforcure', key:'artist_email', value: sub.artist.email, type:'single_line_text_field' },
       { namespace:'artforcure', key:'submission_id', value: sub.id, type:'single_line_text_field' },
+      { namespace:'artforcure', key:'cost_of_sale', value: cos.toFixed(2), type:'single_line_text_field' },
     ]
   };
 
@@ -1858,7 +1859,8 @@ async function loadOrders() {
     const store = intg.shopifyStore;
 
     // Fetch orders
-    const res = await fetch(worker+'/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,created_at,financial_status,customer,line_items,total_price', {
+    // Request line item properties including cost data
+    const res = await fetch(worker+'/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,created_at,financial_status,customer,line_items,total_price&line_items_fields=id,title,price,vendor,product_id,variant_id,cost_per_item,total_discount', {
       headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
     });
     if(!res.ok) { const e=await res.json(); throw new Error('Shopify '+res.status+': '+JSON.stringify(e.errors||e)); }
@@ -1892,29 +1894,29 @@ async function loadOrders() {
       }
     } catch(e) { console.warn('Collection lookup failed (non-fatal):', e); }
 
-    // ── Fetch cost per item via product variant's inventory_item directly ──
-    const costMap = {}; // variant_id (string) -> cost
+    // ── Fetch cost from product metafields (artforcure.cost_of_sale) ──
+    // This works with read_products scope only
+    const costMap = {}; // product_id (string) -> cost
     try {
-      // Fetch each unique variant directly — most reliable method
-      const variantIds = [...new Set(allLineItems.map(i=>i.variant_id).filter(Boolean))];
-      for(const vid of variantIds.slice(0,50)) {
-        try {
-          const vRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/variants/'+vid+'.json?fields=id,inventory_item_id', {
-            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-          });
-          if(!vRes.ok) continue;
-          const variant = (await vRes.json()).variant;
-          if(!variant?.inventory_item_id) continue;
-          const iRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/inventory_items/'+variant.inventory_item_id+'.json?fields=id,cost', {
-            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-          });
-          if(!iRes.ok) continue;
-          const inv = (await iRes.json()).inventory_item;
-          if(inv?.cost) costMap[String(vid)] = parseFloat(inv.cost);
-        } catch(e) { /* skip individual failures */ }
+      for(const pid of productIds.slice(0,50)) {
+        const mRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/products/'+pid+'/metafields.json?namespace=artforcure&key=cost_of_sale', {
+          headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+        });
+        if(mRes.ok) {
+          const mData = await mRes.json();
+          const mf = (mData.metafields||[]).find(m=>m.key==='cost_of_sale');
+          if(mf?.value) costMap[String(pid)] = parseFloat(mf.value);
+        }
       }
-      console.log('costMap built:', Object.keys(costMap).length, 'of', variantIds.length);
-    } catch(e) { console.warn('Cost lookup failed:', e); }
+      console.log('Metafield costMap:', Object.keys(costMap).length, 'entries');
+    } catch(e) { console.warn('Metafield cost lookup failed:', e); }
+
+    // Also load any manually-entered costs from Firestore
+    const manualCostMap = {}; // product_id -> cost
+    try {
+      const mcSnap = await getDocs(collection(db,'order_costs'));
+      mcSnap.forEach(d=>{ manualCostMap[d.id] = parseFloat(d.data().cost)||0; });
+    } catch(e) {}
 
     // Load acknowledged order IDs from Firestore
     const ackSnap = await getDocs(collection(db,'order_acknowledgements'));
@@ -1937,11 +1939,13 @@ async function loadOrders() {
         const isAcked = acked.has(orderId);
         const price = parseFloat(item.price)||0;
         // Use actual cost per item from Shopify — leave blank if not set
-        const varKey = String(item.variant_id);
-        const cos = costMap[varKey] != null ? costMap[varKey] : null;
+        const pidKey = String(item.product_id);
+        // Try direct from line item first (if Shopify returns it), then metafield, then manual
+        const lineItemCost = item.cost_per_item ? parseFloat(item.cost_per_item) : null;
+        const cos = lineItemCost != null ? lineItemCost :
+                    manualCostMap[pidKey] != null ? manualCostMap[pidKey] :
+                    costMap[pidKey] != null ? costMap[pidKey] : null;
         const afc = cos != null ? price - cos : null;
-        if(cos==null) console.log('No cost for variant', varKey, '— costMap keys sample:', Object.keys(costMap).slice(0,3));
-        else console.log('Cost found for variant', varKey, '=', cos);
 
         // Use collection name if found, fall back to vendor
         const collectionName = collectionMap[item.product_id] || item.vendor || '';
@@ -2152,6 +2156,37 @@ window.sendBuyerEmail = function() {
   document.getElementById('email-buyer-modal').remove();
 };
 
+
+window.setCostManually = async function(btn) {
+  const productId = btn.dataset.pid;
+  const costStr = prompt('Enter cost of sale (artist payment) for this product:');
+  if(costStr === null) return;
+  const cost = parseFloat(costStr);
+  if(isNaN(cost) || cost < 0) { alert('Please enter a valid number.'); return; }
+  try {
+    await setDoc(doc(db,'order_costs',String(productId)), { cost, updatedAt:nowStr() });
+    btn.textContent = String.fromCharCode(163)+cost.toFixed(2)+' cost set';
+    btn.disabled = true;
+    btn.style.color = 'var(--success)';
+    // Refresh orders to show updated figures
+    setTimeout(loadOrders, 500);
+  } catch(e) { alert('Error saving cost: '+e.message); }
+};
+
+window.setCostManually = async function(btn) {
+  const productId = btn.dataset.pid;
+  const costStr = prompt('Enter cost of sale (artist payment) for this product:');
+  if(costStr === null) return;
+  const cost = parseFloat(costStr);
+  if(isNaN(cost) || cost < 0) { alert('Please enter a valid number.'); return; }
+  try {
+    await setDoc(doc(db,'order_costs',String(productId)), { cost, updatedAt:nowStr() });
+    btn.textContent = String.fromCharCode(163)+cost.toFixed(2)+' cost set';
+    btn.disabled = true;
+    btn.style.color = 'var(--success)';
+    setTimeout(loadOrders, 800);
+  } catch(e) { alert('Error saving cost: '+e.message); }
+};
 
 // ── BOOT — wait for auth state before doing anything ──
 // (onAuthStateChanged above handles everything)
