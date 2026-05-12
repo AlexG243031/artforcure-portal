@@ -1850,6 +1850,8 @@ async function loadOrders() {
     v.innerHTML = '<div class="page-title">Orders</div><div class="alert alert-warn" style="margin-top:1rem">Shopify credentials not configured — go to Settings first.</div>'; return;
   }
   try {
+    // Force fresh token each time orders loads to pick up any new scopes
+    window._shopifyTokenCache = { token: null, expiresAt: 0 };
     const token = await getShopifyToken();
     const worker = (intg.shopifyWorker||'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/,'');
     const store = intg.shopifyStore;
