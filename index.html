@@ -1892,43 +1892,28 @@ async function loadOrders() {
       }
     } catch(e) { console.warn('Collection lookup failed (non-fatal):', e); }
 
-    // ── Fetch cost per item — look up per product to get all variants ──
+    // ── Fetch cost per item via product variant's inventory_item directly ──
     const costMap = {}; // variant_id (string) -> cost
     try {
-      // Build variant_id -> inventory_item_id map by fetching each product's variants
-      const invItemIdMap = {}; // variant_id -> inventory_item_id
-      for(const pid of productIds.slice(0,30)) {
-        const vRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/products/'+pid+'/variants.json?fields=id,inventory_item_id&limit=100', {
-          headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-        });
-        if(vRes.ok) {
-          const variants = (await vRes.json()).variants||[];
-          for(const v of variants) {
-            if(v.inventory_item_id) invItemIdMap[String(v.id)] = String(v.inventory_item_id);
-          }
-        }
+      // Fetch each unique variant directly — most reliable method
+      const variantIds = [...new Set(allLineItems.map(i=>i.variant_id).filter(Boolean))];
+      for(const vid of variantIds.slice(0,50)) {
+        try {
+          const vRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/variants/'+vid+'.json?fields=id,inventory_item_id', {
+            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+          });
+          if(!vRes.ok) continue;
+          const variant = (await vRes.json()).variant;
+          if(!variant?.inventory_item_id) continue;
+          const iRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/inventory_items/'+variant.inventory_item_id+'.json?fields=id,cost', {
+            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+          });
+          if(!iRes.ok) continue;
+          const inv = (await iRes.json()).inventory_item;
+          if(inv?.cost) costMap[String(vid)] = parseFloat(inv.cost);
+        } catch(e) { /* skip individual failures */ }
       }
-      // Now batch-fetch inventory items for all collected IDs
-      const invIds = [...new Set(Object.values(invItemIdMap))];
-      for(let i=0; i<invIds.length; i+=100) {
-        const batch = invIds.slice(i, i+100);
-        const iRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/inventory_items.json?ids='+batch.join(',')+'&fields=id,cost&limit=100', {
-          headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-        });
-        if(iRes.ok) {
-          const invItems = (await iRes.json()).inventory_items||[];
-          const invCostMap = {};
-          for(const inv of invItems) {
-            if(inv.cost) invCostMap[String(inv.id)] = parseFloat(inv.cost);
-          }
-          // Map variant_id -> cost
-          for(const [varId, invId] of Object.entries(invItemIdMap)) {
-            const cost = invCostMap[invId];
-            if(cost != null) costMap[varId] = cost;
-          }
-        }
-      }
-      console.log('costMap built:', Object.keys(costMap).length, 'entries');
+      console.log('costMap built:', Object.keys(costMap).length, 'of', variantIds.length);
     } catch(e) { console.warn('Cost lookup failed:', e); }
 
     // Load acknowledged order IDs from Firestore
