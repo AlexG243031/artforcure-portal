@@ -746,7 +746,7 @@ window.lookupArtist = async function(){
   const res=document.getElementById('lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
-    const snap=await getDocs(query(collection(db,'submissions'),where('artist.email','==',email)));
+    const snap=await getDocs(query(collection(db,'submissions'),where('artist.email','==',email),orderBy('createdAt','desc')));
     if(snap.empty){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submission found for that email address.</div>';document.getElementById('artist-details').innerHTML='';return;}
     res.innerHTML='';
     const subs=[]; snap.forEach(d=>subs.push({id:d.id,...d.data()}));
@@ -1011,7 +1011,7 @@ function renderAdmin(){
         ${sub.status!=='rejected'?`<button class="btn btn-sm btn-danger" onclick="setStatus('${sub.id}','rejected')">✗ Reject</button>`:''}
         ${sub.status==='approved'&&!sub.shopifyId?`<button class="btn btn-sm btn-shopify" onclick="showShopifyModal('${sub.id}')">→ Push to Shopify</button>`:''}
         ${sub.shopifyId?`<span style="font-size:12px;color:var(--success);font-weight:700">✓ Live on Shopify (${sub.shopifyId})</span>`:''}
-        <button class="btn btn-sm" style="background:#0f9d58;color:white" onclick="pushToSheetsBtn('${sub.id}')">📊 Push to Sheet</button>
+
         <button class="archive-btn" onclick="archiveSubmission('${sub.id}')">📁 Archive</button>
       </div>
     </div>`;
@@ -1083,6 +1083,13 @@ window.confirmShopify=async function(id){
     const newLog=[...(sub.auditLog||[]),{ts:now,by:'Admin',note:`Pushed to Shopify (${shopifyId})`}];
     await updateDoc(doc(db,'submissions',id),{shopifyId,auditLog:newLog});
     sub.shopifyId=shopifyId; sub.auditLog=newLog;
+    // Auto push to Google Sheet
+    try {
+      await pushToSheets(sub);
+      const sheetLog=[...newLog,{ts:now,by:'Admin',note:'Auto-pushed to Google Sheet'}];
+      await updateDoc(doc(db,'submissions',id),{auditLog:sheetLog,sheetPushed:true});
+      sub.auditLog=sheetLog; sub.sheetPushed=true;
+    } catch(e) { console.warn('Sheet auto-push failed (non-fatal):', e); }
     closeModal(); renderAdmin();
   } catch(err){
     const errDiv=document.getElementById('shopify-modal-error');
@@ -1550,9 +1557,8 @@ async function pushToShopify(sub) {
     tags: ['Art for Cure', sub.category, sub.piece.edition, sub.artist.name].filter(Boolean).join(', '),
     variants: [{
       price: price.toFixed(2),
-      inventory_management: 'shopify',
-      inventory_quantity: parseInt(sub.piece.numDelivered)||0,
-      inventory_policy: 'deny',
+      inventory_management: null,
+      requires_shipping: false,
     }],
     images: imgs,
     metafields: [
@@ -1573,33 +1579,15 @@ async function pushToShopify(sub) {
   const data = await res.json();
   const productId = data.product.id.toString();
 
-  // Set cost + inventory quantity after creation (Shopify ignores these at product creation)
+  // Set cost per item via inventory item API (cannot be set at product creation)
   try {
-    const variant = data.product.variants[0];
-    const inventoryItemId = variant.inventory_item_id;
-
-    // 1. Set cost per item
+    const inventoryItemId = data.product.variants[0].inventory_item_id;
     await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_items/'+inventoryItemId+'.json', {
       method: 'PUT',
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2) } }),
+      body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2), tracked: false } }),
     });
-
-    // 2. Get the location ID (needed to set inventory level)
-    const locRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/locations.json', {
-      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store },
-    });
-    const locData = await locRes.json();
-    const locationId = locData.locations[0].id;
-
-    // 3. Set inventory quantity at that location
-    const qty = parseInt(sub.piece.numDelivered)||0;
-    await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_levels/set.json', {
-      method: 'POST',
-      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: qty }),
-    });
-  } catch(e) { console.warn('Post-creation inventory/cost update failed (non-fatal):', e); }
+  } catch(e) { console.warn('Cost update failed (non-fatal):', e); }
 
   return productId;
 }
@@ -1913,7 +1901,7 @@ async function loadOrders() {
           'Mobile: '+buyerPhone+nl+
           'Address: '+buyerAddr+nl+nl+
           'This will result in a payment to you of '+String.fromCharCode(163)+cos.toFixed(2)+' once this order is fulfilled.'+nl+
-          'Art for Cure commission will be '+String.fromCharCode(163)+afc.toFixed(2)+'.'+nl+nl+
+          'Art for Cure commission will be '+String.fromCharCode(163)+(price-cos).toFixed(2)+'.'+nl+nl+
           'Best Regards,'+nl+'AFC Sales Team'
         );
 
@@ -1966,15 +1954,18 @@ window.emailArtist = function(orderId, artist, piece, buyerName, buyerEmail, buy
   // Get artist email from submissions — look up by artist name
   // Show editable email modal
   const nl2 = '\n';
+  const priceNum = parseFloat(price)||0;
+  const cosNum = parseFloat(cos)||0;
+  const commNum = (priceNum - cosNum).toFixed(2);
   const body =
     'Dear '+artistDec+','+nl2+nl2+
-    'We have sold '+pieceDec+' to '+buyerNameDec+' for '+String.fromCharCode(163)+price+'.'+nl2+nl2+
+    'We have sold '+pieceDec+' to '+buyerNameDec+' for '+String.fromCharCode(163)+priceNum.toFixed(2)+'.'+nl2+nl2+
     'Their contact details are as follows:'+nl2+
     'Email: '+buyerEmailDec+nl2+
     'Mobile: '+buyerPhoneDec+nl2+
     'Address: '+buyerAddrDec+nl2+nl2+
-    'This will result in a payment to you of '+String.fromCharCode(163)+cos+' once this order is fulfilled.'+nl2+
-    'Art for Cure commission will be '+String.fromCharCode(163)+afc+'.'+nl2+nl2+
+    'This will result in a payment to you of '+String.fromCharCode(163)+cosNum.toFixed(2)+' once this order is fulfilled.'+nl2+
+    'Art for Cure commission will be '+String.fromCharCode(163)+commNum+'.'+nl2+nl2+
     'Best Regards,'+nl2+'AFC Sales Team';
 
   // Show editable modal
@@ -2036,10 +2027,11 @@ window.emailBuyer = function(buyerName, buyerEmail, piece, artist, afc) {
   const buyerNameDec=d(buyerName), buyerEmailDec=d(buyerEmail), pieceDec=d(piece), artistDec=d(artist);
 
   const nl = '\n';
+  const afcNum = parseFloat(afc)||0;
   const body =
     'Dear '+buyerNameDec+','+nl+nl+
     'Thank you so much for purchasing '+pieceDec+' by '+artistDec+'.'+nl+nl+
-    'This has generated a commission for Art for Cure of '+String.fromCharCode(163)+afc+' which will go directly to our causes.'+nl+nl+
+    'This has generated a commission for Art for Cure of '+String.fromCharCode(163)+afcNum.toFixed(2)+' which will go directly to our causes.'+nl+nl+
     artistDec+' has your contact details and will be in contact with you directly to discuss delivery/collection.'+nl+nl+
     'Best Regards,'+nl+'AFC Sales Team';
 
@@ -2091,10 +2083,11 @@ window.emailBuyer = function(buyerName, buyerEmail, piece, artist, afc) {
   const d = decodeURIComponent;
   const buyerNameDec=d(buyerName), buyerEmailDec=d(buyerEmail), pieceDec=d(piece), artistDec=d(artist);
   const nl = '\n';
+  const afcNum = parseFloat(afc)||0;
   const body =
     'Dear '+buyerNameDec+','+nl+nl+
     'Thank you so much for purchasing '+pieceDec+' by '+artistDec+'.'+nl+nl+
-    'This has generated a commission for Art for Cure of '+String.fromCharCode(163)+afc+' which will go directly to our causes.'+nl+nl+
+    'This has generated a commission for Art for Cure of '+String.fromCharCode(163)+afcNum.toFixed(2)+' which will go directly to our causes.'+nl+nl+
     artistDec+' has your contact details and will be in contact with you directly to discuss delivery/collection.'+nl+nl+
     'Best Regards,'+nl+'AFC Sales Team';
 
