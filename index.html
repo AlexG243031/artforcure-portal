@@ -1907,7 +1907,7 @@ async function loadOrders() {
             if(iRes.ok) {
               const iData = await iRes.json();
               const cost = parseFloat(iData.inventory_item?.cost)||0;
-              costMap[v.id] = cost;
+              costMap[String(v.id)] = cost;
             }
           }
         }
@@ -1935,7 +1935,7 @@ async function loadOrders() {
         const isAcked = acked.has(orderId);
         const price = parseFloat(item.price)||0;
         // Use actual cost per item from Shopify — leave blank if not set
-        const cos = costMap[item.variant_id] != null ? costMap[item.variant_id] : null;
+        const cos = costMap[String(item.variant_id)] != null ? costMap[String(item.variant_id)] : null;
         const afc = cos != null ? price - cos : null;
 
         // Use collection name if found, fall back to vendor
