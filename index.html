@@ -1385,6 +1385,7 @@ async function saveIntegrationSettings() {
   const shopifyClientId = (document.getElementById('shopify-client-id')||{}).value||'';
   const shopifyClientSecret = (document.getElementById('shopify-client-secret')||{}).value||'';
   const shopifyWorker = ((document.getElementById('shopify-worker')||{}).value||'').replace(/\/$/, '');
+  const ordersCcEmail = (document.getElementById('orders-cc-email')||{}).value||'';
   const data = { sheetsUrl, shopifyStore, shopifyClientId, shopifyClientSecret, shopifyWorker, ordersCcEmail };
   window._currentIntegrations = data;
   // Clear cached token whenever credentials change
@@ -2157,49 +2158,6 @@ window.sendBuyerEmail = function() {
   document.getElementById('email-buyer-modal').remove();
 };
 
-window.emailBuyer = function(buyerName, buyerEmail, piece, artist, afc) {
-  const d = decodeURIComponent;
-  const buyerNameDec=d(buyerName), buyerEmailDec=d(buyerEmail), pieceDec=d(piece), artistDec=d(artist);
-  const nl = '\n';
-  const L3 = String.fromCharCode(163);
-  const afcNum = afc && afc !== 'null' ? parseFloat(afc) : null;
-  const body =
-    'Dear '+buyerNameDec+','+nl+nl+
-    'Thank you so much for purchasing '+pieceDec+' by '+artistDec+'.'+nl+nl+
-    (afcNum!=null?'This has generated a commission for Art for Cure of '+L3+afcNum.toFixed(2)+' which will go directly to our causes.'+nl+nl:'This has generated a commission for Art for Cure which will go directly to our causes.'+nl+nl) +
-    artistDec+' has your contact details and will be in contact with you directly to discuss delivery/collection.'+nl+nl+
-    'Best Regards,'+nl+'AFC Sales Team';
-
-  const existing = document.getElementById('email-buyer-modal');
-  if(existing) existing.remove();
-
-  const ccVal = (window._currentIntegrations||{}).ordersCcEmail||'';
-  document.body.insertAdjacentHTML('beforeend',
-    '<div class="modal-bg" id="email-buyer-modal" onclick="if(event.target.id===\'email-buyer-modal\')document.getElementById(\'email-buyer-modal\').remove()">'+
-    '<div class="modal" style="max-width:600px;">'+
-    '<h2>\u2709 Email Buyer</h2>'+
-    '<p style="font-size:12px;margin-bottom:0.5rem;">Edit the email then click Send.</p>'+
-    '<div class="field" style="margin-bottom:0.75rem;"><label>To (Buyer Email)</label><input id="eb-to" value="'+buyerEmailDec+'"/></div>'+
-    '<div class="field" style="margin-bottom:0.75rem;"><label>CC</label><input id="eb-cc" value="'+ccVal+'" placeholder="cc@artforcure.org.uk"/></div>'+
-    '<div class="field" style="margin-bottom:0.75rem;"><label>Subject</label><input id="eb-subject" value="Purchase of '+pieceDec+'"/></div>'+
-    '<div class="field" style="margin-bottom:1rem;"><label>Body</label><textarea id="eb-body" style="min-height:200px;font-size:13px;">'+body.replace(/</g,'&lt;')+'</textarea></div>'+
-    '<div class="modal-actions">'+
-    '<button class="btn btn-secondary" onclick="document.getElementById(\'email-buyer-modal\').remove()">Cancel</button>'+
-    '<button class="btn btn-email" onclick="sendBuyerEmail()">Open in Email Client \u2192</button>'+
-    '</div></div></div>');
-};
-
-window.sendBuyerEmail = function() {
-  const to = (document.getElementById('eb-to')||{}).value||'';
-  const cc = (document.getElementById('eb-cc')||{}).value||'';
-  const subject = (document.getElementById('eb-subject')||{}).value||'';
-  const body = (document.getElementById('eb-body')||{}).value||'';
-  if(!to) { alert('Please enter the buyer email address.'); return; }
-  let mailto = 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-  if(cc) mailto += '&cc='+encodeURIComponent(cc);
-  window.open(mailto, '_blank');
-  document.getElementById('email-buyer-modal').remove();
-};
 
 // ── BOOT — wait for auth state before doing anything ──
 // (onAuthStateChanged above handles everything)
