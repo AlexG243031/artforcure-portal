@@ -1853,7 +1853,8 @@ async function loadOrders() {
     const token = await getShopifyToken();
     const worker = (intg.shopifyWorker||'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/,'');
     const store = intg.shopifyStore;
-    // Fetch orders with customer and line item details
+
+    // Fetch orders
     const res = await fetch(worker+'/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,created_at,financial_status,customer,line_items,total_price', {
       headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
     });
@@ -1861,14 +1862,46 @@ async function loadOrders() {
     const data = await res.json();
     const orders = data.orders||[];
 
+    // Build unique product ID list across all line items
+    const productIds = [...new Set(orders.flatMap(o=>(o.line_items||[]).map(i=>i.product_id).filter(Boolean)))];
+
+    // Fetch collection name for each product (batch via product metafields/collections)
+    // Use custom_collections API — fetch all and build a map of product_id -> collection title
+    const collectionMap = {}; // product_id -> collection title
+    try {
+      // Fetch all custom collections
+      const colRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/custom_collections.json?limit=250&fields=id,title,handle', {
+        headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+      });
+      if(colRes.ok) {
+        const colData = await colRes.json();
+        const collections = colData.custom_collections||[];
+        // For each collection, fetch its product collects to map product_id -> collection title
+        // But to avoid 250 API calls, fetch collects for each product_id we have in orders
+        for(const pid of productIds.slice(0,50)) { // limit to 50 products
+          const cRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/collects.json?product_id='+pid+'&limit=10', {
+            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+          });
+          if(cRes.ok) {
+            const cData = await cRes.json();
+            const collects = cData.collects||[];
+            if(collects.length) {
+              // Find the matching collection title
+              const col = collections.find(c=>c.id===collects[0].collection_id);
+              if(col) collectionMap[pid] = col.title;
+            }
+          }
+        }
+      }
+    } catch(e) { console.warn('Collection lookup failed (non-fatal):', e); }
+
     // Load acknowledged order IDs from Firestore
     const ackSnap = await getDocs(collection(db,'order_acknowledgements'));
     const acked = new Set(); ackSnap.forEach(d=>acked.add(d.id));
 
     if(!orders.length) { v.innerHTML='<div class="page-title">Orders</div><div class="empty-state"><h3>No orders yet.</h3></div>'; return; }
 
-    let html = `<div class="page-title">Orders</div>
-      <div class="page-sub">Orders from Shopify. Bold = unacknowledged. Click Acknowledged once reviewed.</div>`;
+    let html = '<div class="page-title">Orders</div><div class="page-sub">Orders from Shopify. Bold = unacknowledged. Click Acknowledged once reviewed.</div>';
 
     for(const order of orders) {
       const customer = order.customer||{};
@@ -1882,67 +1915,81 @@ async function loadOrders() {
         const orderId = order.id+'_'+item.id;
         const isAcked = acked.has(orderId);
         const price = parseFloat(item.price)||0;
-        // Try to find submission in Firebase to get commission/cost
-        // Artist is vendor on the Shopify product
-        const artist = item.vendor||'';
-        // Commission — default 40% unless we can look it up
         const comm = 40;
         const cos = price*((100-comm)/100);
         const afc = price - cos;
 
-        // Build email body
-        const emailSubject = encodeURIComponent('Sale of '+item.title+' by Art for Cure');
-        const nl = '\n';
-        const emailBody = encodeURIComponent(
-          'Dear '+artist+','+nl+nl+
-          'We have sold '+item.title+' to '+buyerName+' for '+String.fromCharCode(163)+price.toFixed(2)+'.'+nl+nl+
-          'Their contact details are as follows:'+nl+
-          'Email: '+buyerEmail+nl+
-          'Mobile: '+buyerPhone+nl+
-          'Address: '+buyerAddr+nl+nl+
-          'This will result in a payment to you of '+String.fromCharCode(163)+cos.toFixed(2)+' once this order is fulfilled.'+nl+
-          'Art for Cure commission will be '+String.fromCharCode(163)+(price-cos).toFixed(2)+'.'+nl+nl+
-          'Best Regards,'+nl+'AFC Sales Team'
-        );
+        // Use collection name if found, fall back to vendor
+        const collectionName = collectionMap[item.product_id] || item.vendor || '';
 
-        html += `<div class="order-row ${isAcked?'':'unread'}" id="order-${orderId}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
-            <div>
-              <div class="order-piece">${esc(item.title)}</div>
-              <div class="order-artist">Artist: ${esc(artist)} · Order ${esc(order.name)} · ${new Date(order.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div>
-              <div class="order-meta">
-                <span><strong>£${price.toFixed(2)}</strong> price achieved</span>
-                <span><strong style="color:var(--success)">£${cos.toFixed(2)}</strong> cost of sale</span>
-                <span><strong style="color:var(--pink)">£${afc.toFixed(2)}</strong> AFC commission</span>
-              </div>
-            </div>
-            ${isAcked?'<span style="font-size:12px;color:var(--success);font-weight:700;">✓ Acknowledged</span>':''}
-          </div>
-          <div class="order-buyer">
-            <strong>Buyer:</strong> ${esc(buyerName)}<br>
-            ${buyerEmail?'<strong>Email:</strong> '+esc(buyerEmail)+'<br>':''}
-            ${buyerPhone?'<strong>Mobile:</strong> '+esc(buyerPhone)+'<br>':''}
-            ${buyerAddr?'<strong>Address:</strong> '+esc(buyerAddr):''}
-          </div>
-          <div class="order-actions">
-            ${!isAcked?`<button class="btn btn-sm btn-success" onclick="acknowledgeOrder('${orderId}')">✓ Acknowledged</button>`:''}
-            <button class="btn btn-sm btn-email" onclick="emailArtist('${orderId}','${encodeURIComponent(artist)}','${encodeURIComponent(item.title)}','${encodeURIComponent(buyerName)}','${encodeURIComponent(buyerEmail)}','${encodeURIComponent(buyerPhone)}','${encodeURIComponent(buyerAddr)}','${price.toFixed(2)}','${cos.toFixed(2)}','${afc.toFixed(2)}')">✉ Email Artist</button>
-            <button class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;border:1px solid #9bbfe8;" onclick="emailBuyer('${encodeURIComponent(buyerName)}','${encodeURIComponent(buyerEmail)}','${encodeURIComponent(item.title)}','${encodeURIComponent(artist)}','${afc.toFixed(2)}')">✉ Email Buyer</button>
-          </div>
-        </div>`;
+        // Store order data for use by button handlers
+        window._orderData = window._orderData || {};
+        window._orderData[orderId] = {
+          orderId, collectionName, title: item.title,
+          buyerName, buyerEmail, buyerPhone, buyerAddr,
+          price: price.toFixed(2), cos: cos.toFixed(2), afc: afc.toFixed(2)
+        };
+        const L = String.fromCharCode(163);
+        const ackBtn = !isAcked ? '<button class="btn btn-sm btn-success" data-oid="'+orderId+'" onclick="acknowledgeOrder(this)">\u2713 Acknowledged</button>' : '';
+        const ackBadge = isAcked ? '<span style="font-size:12px;color:var(--success);font-weight:700;">\u2713 Acknowledged</span>' : '';
+        html +=
+          '<div class="order-row '+(isAcked?'':'unread')+'" id="order-'+orderId+'">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">' +
+          '<div>' +
+          '<div class="order-piece">'+esc(item.title)+'</div>' +
+          '<div class="order-artist">Collection: '+esc(collectionName)+' &middot; Order '+esc(order.name)+' &middot; '+new Date(order.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+'</div>' +
+          '<div class="order-meta">' +
+          '<span><strong>'+L+price.toFixed(2)+'</strong> price achieved</span> ' +
+          '<span><strong style="color:var(--success)">'+L+cos.toFixed(2)+'</strong> cost of sale</span> ' +
+          '<span><strong style="color:var(--pink)">'+L+afc.toFixed(2)+'</strong> AFC commission</span>' +
+          '</div></div>' +
+          ackBadge +
+          '</div>' +
+          '<div class="order-buyer"><strong>Buyer:</strong> '+esc(buyerName)+'<br>' +
+          (buyerEmail ? '<strong>Email:</strong> '+esc(buyerEmail)+'<br>' : '') +
+          (buyerPhone ? '<strong>Mobile:</strong> '+esc(buyerPhone)+'<br>' : '') +
+          (buyerAddr ? '<strong>Address:</strong> '+esc(buyerAddr) : '') +
+          '</div>' +
+          '<div class="order-actions">' +
+          ackBtn +
+          '<button class="btn btn-sm btn-email" data-oid="'+orderId+'" onclick="emailArtistById(this.dataset.oid)">\u2709 Email Artist</button>' +
+          '<button class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;border:1px solid #9bbfe8;" data-oid="'+orderId+'" onclick="emailBuyerById(this.dataset.oid)">\u2709 Email Buyer</button>' +
+          '</div></div>';
       }
     }
     v.innerHTML = html;
   } catch(e) {
-    v.innerHTML = `<div class="page-title">Orders</div><div class="alert alert-danger" style="margin-top:1rem">✗ ${e.message}</div>`;
+    v.innerHTML = '<div class="page-title">Orders</div><div class="alert alert-danger" style="margin-top:1rem">✗ '+e.message+'</div>';
   }
 }
 
-window.acknowledgeOrder = async function(orderId) {
+window.acknowledgeOrder = async function(btn) {
+  const orderId = btn ? btn.dataset.oid : null;
+  if(!orderId) return;
   try {
     await setDoc(doc(db,'order_acknowledgements',orderId), { ackedAt:nowStr(), ackedBy:_currentUser?.email||'' });
-    loadOrders();
+    const row = document.getElementById('order-'+orderId);
+    if(row) {
+      row.classList.remove('unread');
+      btn.replaceWith(Object.assign(document.createElement('span'),{style:'font-size:12px;color:var(--success);font-weight:700;',textContent:'✓ Acknowledged'}));
+    }
   } catch(e) { alert('Error: '+e.message); }
+};
+
+window.emailArtistById = function(orderId) {
+  const d = window._orderData && window._orderData[orderId];
+  if(!d) return;
+  emailArtist(orderId, encodeURIComponent(d.collectionName), encodeURIComponent(d.title),
+    encodeURIComponent(d.buyerName), encodeURIComponent(d.buyerEmail),
+    encodeURIComponent(d.buyerPhone), encodeURIComponent(d.buyerAddr),
+    d.price, d.cos, d.afc);
+};
+
+window.emailBuyerById = function(orderId) {
+  const d = window._orderData && window._orderData[orderId];
+  if(!d) return;
+  emailBuyer(encodeURIComponent(d.buyerName), encodeURIComponent(d.buyerEmail),
+    encodeURIComponent(d.title), encodeURIComponent(d.collectionName), d.afc);
 };
 
 window.emailArtist = function(orderId, artist, piece, buyerName, buyerEmail, buyerPhone, buyerAddr, price, cos, afc) {
