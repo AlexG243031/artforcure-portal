@@ -1942,8 +1942,11 @@ async function loadOrders() {
         const isAcked = acked.has(orderId);
         const price = parseFloat(item.price)||0;
         // Use actual cost per item from Shopify — leave blank if not set
-        const cos = costMap[String(item.variant_id)] != null ? costMap[String(item.variant_id)] : null;
+        const varKey = String(item.variant_id);
+        const cos = costMap[varKey] != null ? costMap[varKey] : null;
         const afc = cos != null ? price - cos : null;
+        if(cos==null) console.log('No cost for variant', varKey, '— costMap keys sample:', Object.keys(costMap).slice(0,3));
+        else console.log('Cost found for variant', varKey, '=', cos);
 
         // Use collection name if found, fall back to vendor
         const collectionName = collectionMap[item.product_id] || item.vendor || '';
