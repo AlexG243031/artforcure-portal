@@ -1979,7 +1979,7 @@ async function loadOrders() {
           (buyerAddr ? '<strong>Address:</strong> '+esc(buyerAddr) : '') +
           '</div>' +
           '<div class="order-actions">' +
-          ackBtn +
+          ackBtn +'<button class="btn btn-sm btn-secondary" data-pid="'+item.product_id+'" onclick="setCostManually(this)">Set Cost</button>' +
           '<button class="btn btn-sm btn-email" data-oid="'+orderId+'" onclick="emailArtistById(this.dataset.oid)">\u2709 Email Artist</button>' +
           '<button class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;border:1px solid #9bbfe8;" data-oid="'+orderId+'" onclick="emailBuyerById(this.dataset.oid)">\u2709 Email Buyer</button>' +
           '</div></div>';
