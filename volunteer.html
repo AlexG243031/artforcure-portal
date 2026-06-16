@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Volunteer with Art for Cure</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --cream: #FAF7F2;
+      --ink: #1C1C1C;
+      --rose: #C4736A;
+      --rose-light: #F0E0DE;
+      --grey: #6B6B6B;
+      --border: #DDD8D0;
+      --white: #FFFFFF;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 2rem 2rem 1.5rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header .charity-name {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.1rem;
+      font-weight: 400;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--grey);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 3rem 1.5rem 4rem;
+    }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 3rem 3rem 2.5rem;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 2px 24px rgba(0,0,0,0.05);
+    }
+
+    .card-header {
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    .card-header .eyebrow {
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--rose);
+      margin-bottom: 0.75rem;
+    }
+
+    .card-header h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 2.2rem;
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
+    }
+
+    .card-header p {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--grey);
+    }
+
+    .divider {
+      width: 40px;
+      height: 1px;
+      background: var(--rose);
+      margin: 1.5rem auto;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--grey);
+      margin-bottom: 0.4rem;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      color: var(--ink);
+      background: var(--cream);
+      transition: border-color 0.2s;
+      outline: none;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--rose);
+      background: var(--white);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: #BCBAB6;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--rose);
+      margin: 1.75rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--rose-light);
+    }
+
+    .submit-btn {
+      width: 100%;
+      margin-top: 2rem;
+      padding: 0.85rem;
+      background: var(--rose);
+      color: var(--white);
+      border: none;
+      border-radius: 2px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .submit-btn:hover { background: #B5645B; }
+    .submit-btn:active { transform: scale(0.99); }
+    .submit-btn:disabled { background: #D4AEA9; cursor: not-allowed; }
+
+    .success-msg {
+      display: none;
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+
+    .success-msg .tick {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .success-msg h2 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.8rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    .success-msg p {
+      font-size: 0.875rem;
+      color: var(--grey);
+      line-height: 1.6;
+    }
+
+    .error-msg {
+      display: none;
+      background: #FDF0EF;
+      border: 1px solid #E8C4C1;
+      border-radius: 2px;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      color: #A8453D;
+      margin-top: 1rem;
+      text-align: center;
+    }
+
+    @media (max-width: 560px) {
+      .card { padding: 2rem 1.5rem; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="charity-name">Art for Cure</div>
+</header>
+
+<main>
+  <div class="card">
+    <div id="form-section">
+      <div class="card-header">
+        <div class="eyebrow">Join Us</div>
+        <h1>Volunteer with<br>Art for Cure</h1>
+        <div class="divider"></div>
+        <p>Help us bring art and hope together at our events. Fill in your details below and we'll be in touch ahead of our next event.</p>
+      </div>
+
+      <form id="volunteer-form">
+        <div class="section-label">Your Details</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName">First Name</label>
+            <input type="text" id="firstName" placeholder="Jane" required />
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last Name</label>
+            <input type="text" id="lastName" placeholder="Smith" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" placeholder="jane@example.com" required />
+        </div>
+
+        <div class="form-group">
+          <label for="mobile">Mobile Number</label>
+          <input type="tel" id="mobile" placeholder="+44 7700 000000" required />
+        </div>
+
+        <div class="section-label">Your Address</div>
+
+        <div class="form-group">
+          <label for="address1">Address Line 1</label>
+          <input type="text" id="address1" placeholder="12 High Street" required />
+        </div>
+
+        <div class="form-group">
+          <label for="address2">Address Line 2</label>
+          <input type="text" id="address2" placeholder="Optional" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="town">Town / City</label>
+            <input type="text" id="town" placeholder="Woodbridge" required />
+          </div>
+          <div class="form-group">
+            <label for="postcode">Postcode</label>
+            <input type="text" id="postcode" placeholder="IP12 1AB" required />
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">Register as a Volunteer</button>
+        <div class="error-msg" id="error-msg">Something went wrong. Please try again.</div>
+      </form>
+    </div>
+
+    <div class="success-msg" id="success-msg">
+      <div class="tick">🌸</div>
+      <h2>Thank you so much!</h2>
+      <p>You've registered as an Art for Cure volunteer. Please check your inbox — we've sent you a confirmation email. We look forward to welcoming you at one of our events very soon.</p>
+    </div>
+  </div>
+</main>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw5So",
+    authDomain: "art-for-cure.firebaseapp.com",
+    projectId: "art-for-cure",
+    storageBucket: "art-for-cure.firebasestorage.app",
+    messagingSenderId: "11223551235",
+    appId: "1:11223551235:web:2a4472a2e56530844ced36"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  document.getElementById('volunteer-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const btn = document.getElementById('submit-btn');
+    const errorMsg = document.getElementById('error-msg');
+    btn.disabled = true;
+    btn.textContent = 'Registering…';
+    errorMsg.style.display = 'none';
+
+    const volunteer = {
+      firstName: document.getElementById('firstName').value.trim(),
+      lastName: document.getElementById('lastName').value.trim(),
+      email: document.getElementById('email').value.trim().toLowerCase(),
+      mobile: document.getElementById('mobile').value.trim(),
+      address1: document.getElementById('address1').value.trim(),
+      address2: document.getElementById('address2').value.trim(),
+      town: document.getElementById('town').value.trim(),
+      postcode: document.getElementById('postcode').value.trim().toUpperCase(),
+      registeredAt: serverTimestamp(),
+      status: 'active'
+    };
+
+    try {
+      await addDoc(collection(db, 'volunteers'), volunteer);
+      document.getElementById('form-section').style.display = 'none';
+      document.getElementById('success-msg').style.display = 'block';
+    } catch (err) {
+      console.error(err);
+      errorMsg.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Register as a Volunteer';
+    }
+  });
+</script>
+
+</body>
+</html>
