@@ -1,20 +1,27 @@
-const functions = require('firebase-functions');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
 
 admin.initializeApp();
-sgMail.setApiKey(functions.config().sendgrid.key);
+
+const SENDGRID_KEY = defineSecret('SENDGRID_KEY');
 
 const FROM_EMAIL = 'belinda@artforcure.org.uk';
-const FROM_NAME = 'Belinda — Art for Cure';
+const FROM_NAME = 'Belinda - Art for Cure';
 
-// ─────────────────────────────────────────────────────────────
-// TRIGGER: New volunteer registered → send welcome email
-// ─────────────────────────────────────────────────────────────
-exports.onVolunteerCreated = functions
-  .region('europe-west2')
-  .firestore.document('volunteers/{volunteerId}')
-  .onCreate(async (snap, context) => {
+// -----------------------------------------------------------
+// TRIGGER: New volunteer registered -> send welcome email
+// -----------------------------------------------------------
+exports.onVolunteerCreated = onDocumentCreated(
+  {
+    document: 'volunteers/{volunteerId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY]
+  },
+  async (event) => {
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const snap = event.data;
     const volunteer = snap.data();
     const { firstName, lastName, email } = volunteer;
 

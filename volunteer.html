@@ -12,8 +12,9 @@
     :root {
       --cream: #FAF7F2;
       --ink: #1C1C1C;
-      --rose: #C4736A;
-      --rose-light: #F0E0DE;
+      --rose: #D30180;
+      --rose-dark: #B3016D;
+      --rose-light: #F8D9EC;
       --grey: #6B6B6B;
       --border: #DDD8D0;
       --white: #FFFFFF;
@@ -29,18 +30,16 @@
     }
 
     header {
-      padding: 2rem 2rem 1.5rem;
+      padding: 1.5rem 2rem;
       text-align: center;
       border-bottom: 1px solid var(--border);
+      background: var(--white);
     }
 
-    header .charity-name {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 1.1rem;
-      font-weight: 400;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--grey);
+    header .logo {
+      height: 46px;
+      width: auto;
+      display: inline-block;
     }
 
     main {
@@ -172,9 +171,9 @@
       transition: background 0.2s, transform 0.1s;
     }
 
-    .submit-btn:hover { background: #B5645B; }
+    .submit-btn:hover { background: var(--rose-dark); }
     .submit-btn:active { transform: scale(0.99); }
-    .submit-btn:disabled { background: #D4AEA9; cursor: not-allowed; }
+    .submit-btn:disabled { background: rgba(211, 1, 128, 0.45); cursor: not-allowed; }
 
     .success-msg {
       display: none;
@@ -221,7 +220,7 @@
 <body>
 
 <header>
-  <div class="charity-name">Art for Cure</div>
+  <img src="AFC1.png" alt="Art for Cure" class="logo" />
 </header>
 
 <main>
