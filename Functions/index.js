@@ -2,14 +2,10 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
-
 admin.initializeApp();
-
 const SENDGRID_KEY = defineSecret('SENDGRID_KEY');
-
 const FROM_EMAIL = 'belinda@artforcure.org.uk';
 const FROM_NAME = 'Belinda - Art for Cure';
-
 // -----------------------------------------------------------
 // TRIGGER: New volunteer registered -> send welcome email
 // -----------------------------------------------------------
@@ -24,7 +20,6 @@ exports.onVolunteerCreated = onDocumentCreated(
     const snap = event.data;
     const volunteer = snap.data();
     const { firstName, lastName, email } = volunteer;
-
     const msg = {
       to: email,
       from: { email: FROM_EMAIL, name: FROM_NAME },
@@ -37,10 +32,9 @@ exports.onVolunteerCreated = onDocumentCreated(
           <style>
             body { font-family: Georgia, serif; background: #FAF7F2; margin: 0; padding: 0; }
             .wrapper { max-width: 560px; margin: 40px auto; background: #FFFFFF; border: 1px solid #DDD8D0; }
-            .header { background: #C4736A; padding: 32px 40px; text-align: center; }
-            .header h1 { color: #FFFFFF; font-size: 22px; font-weight: normal; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+            .header { background: #FFFFFF; padding: 28px 40px; text-align: center; border-bottom: 1px solid #DDD8D0; }
             .body { padding: 40px; color: #1C1C1C; font-size: 16px; line-height: 1.8; }
-            .body h2 { font-size: 26px; font-weight: normal; color: #C4736A; margin-bottom: 8px; }
+            .body h2 { font-size: 26px; font-weight: normal; color: #D30180; margin-bottom: 8px; }
             .body p { margin: 0 0 18px; }
             .footer { padding: 24px 40px; border-top: 1px solid #DDD8D0; font-size: 12px; color: #9B9B9B; font-family: sans-serif; text-align: center; }
           </style>
@@ -48,7 +42,7 @@ exports.onVolunteerCreated = onDocumentCreated(
         <body>
           <div class="wrapper">
             <div class="header">
-              <h1>Art for Cure</h1>
+              <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" width="160" style="height:auto; max-width:160px; display:inline-block;" />
             </div>
             <div class="body">
               <h2>Dear ${firstName},</h2>
@@ -69,7 +63,6 @@ exports.onVolunteerCreated = onDocumentCreated(
         </html>
       `
     };
-
     try {
       await sgMail.send(msg);
       console.log(`Welcome email sent to ${email}`);
