@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -242,7 +242,10 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
+      <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">Volunteers</button>
+      <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">Volunteers</button>
       <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
+      <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
     </div>
     <div class="user-chip">
       <div class="user-chip-dot"></div>
@@ -257,6 +260,8 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-settings" style="display:none;"></div>
     <div id="view-orders" style="display:none;"></div>
     <div id="view-archive" style="display:none;"></div>
+    <div id="view-volunteers" style="display:none;"></div>
+    <div id="view-volunteers" style="display:none;"></div>
   </div>
 </div>
 
@@ -341,7 +346,7 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','admin','orders','archive','settings'].forEach(t=>{
+  ['submit','artist','admin','orders','archive','settings','volunteers'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -349,6 +354,8 @@ window.showTab = function(tab) {
   if(tab==='orders') loadOrders();
   if(tab==='archive') loadArchive();
   if(tab==='settings') loadSettings();
+  if(tab==='volunteers') loadVolunteers();
+  if(tab==='volunteers') loadVolunteers();
 };
 
 // ── Image helpers ──
@@ -1675,6 +1682,8 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('tab-orders').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-archive').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-settings').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
 
     // User chip
     const chipName = document.getElementById('user-chip-name');
