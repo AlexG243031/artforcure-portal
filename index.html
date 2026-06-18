@@ -2198,7 +2198,52 @@ window.setCostManually = async function(btn) {
   } catch(e) { alert('Error saving cost: '+e.message); }
 };
 
-// ── BOOT — wait for auth state before doing anything ──
+// ─────────────────────────────────────────
+// VOLUNTEERS
+// ─────────────────────────────────────────
+async function loadVolunteers() {
+  const v = document.getElementById('view-volunteers');
+  v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading volunteers...</div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'volunteers'), orderBy('registeredAt', 'desc')));
+    const vols = [];
+    snap.forEach(d => vols.push({ id: d.id, ...d.data() }));
+    if (!vols.length) {
+      v.innerHTML = '<div class="page-title">Volunteers</div><div class="empty-state"><h3>No volunteers registered yet.</h3></div>';
+      return;
+    }
+    let h = '<div class="page-title">Volunteers</div>' +
+      '<div class="page-sub">' + vols.length + ' volunteer' + (vols.length !== 1 ? 's' : '') + ' registered.</div>' +
+      '<div class="card" style="padding:0;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<thead><tr style="background:var(--pink-light);text-align:left">' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Name</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Email</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Mobile</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Town</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Postcode</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Registered</th>' +
+      '<th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Status</th>' +
+      '</tr></thead><tbody>';
+    vols.forEach(function(vol, i) {
+      const nm = esc(((vol.firstName || '') + ' ' + (vol.lastName || '')).trim()) || '-';
+      const rd = vol.registeredAt && vol.registeredAt.toDate ? vol.registeredAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+      const bg = i % 2 === 0 ? 'var(--white)' : 'var(--gray-bg)';
+      h += '<tr style="background:' + bg + ';border-bottom:1px solid var(--gray-border)">' +
+        '<td style="padding:10px 14px;font-weight:700;color:var(--dark)">' + nm + '</td>' +
+        '<td style="padding:10px 14px"><a href="mailto:' + esc(vol.email || '') + '" style="color:var(--pink);text-decoration:none">' + esc(vol.email || '-') + '</a></td>' +
+        '<td style="padding:10px 14px;color:var(--gray-text)">' + esc(vol.mobile || '-') + '</td>' +
+        '<td style="padding:10px 14px;color:var(--gray-text)">' + esc(vol.town || '-') + '</td>' +
+        '<td style="padding:10px 14px;color:var(--gray-text)">' + esc(vol.postcode || '-') + '</td>' +
+        '<td style="padding:10px 14px;color:var(--gray-text)">' + rd + '</td>' +
+        '<td style="padding:10px 14px"><span class="badge ' + (vol.status === 'active' ? 'badge-approved' : 'badge-pending') + '">' + esc(vol.status || 'active') + '</span></td>' +
+        '</tr>';
+    });
+    h += '</tbody></table></div>';
+    v.innerHTML = h;
+  } catch(e) {
+    v.innerHTML = '<div class="page-title">Volunteers</div><div class="alert alert-danger">Error: ' + e.message + '</div>';
+  }
+}// ── BOOT — wait for auth state before doing anything ──
 // (onAuthStateChanged above handles everything)
 // Show login screen immediately while Firebase initialises
 document.getElementById('login-screen').style.display='';
