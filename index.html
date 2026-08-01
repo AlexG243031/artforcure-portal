@@ -2239,7 +2239,7 @@ function renderEventSlots() {
     '</div>'
   ).join('');
 }
-window.createEvent = async function() {
+window.createPortalEvent = async function() {
   const title = document.getElementById('event-title').value.trim();
   const location = document.getElementById('event-location').value.trim();
   const instructions = document.getElementById('event-instructions').value.trim();
@@ -2280,7 +2280,7 @@ async function loadEvents() {
     '<label style="font-size:11px;color:var(--gray-text)">Time Slots (applies to every day)</label>' +
     '<div id="event-slots-list" style="margin-top:6px"></div>' +
     '<button type="button" class="btn btn-sm btn-secondary" onclick="addEventSlot()" style="margin-bottom:10px">+ Add Slot</button><br>' +
-    '<button class="btn" onclick="createEvent()">Create Event</button>' +
+    '<button class="btn" onclick="createPortalEvent()">Create Event</button>' +
     '<div id="event-status" style="margin-top:8px"></div>' +
     '</div>' +
     '<div id="events-list"></div>';
