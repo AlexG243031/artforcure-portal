@@ -1680,10 +1680,9 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('tab-admin').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-orders').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-archive').style.display = _isAdmin ? '' : 'none';
-    document.getElementById('tab-settings').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
-    document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
-
+    document.getElementById('tab-events').style.display = _isAdmin ? '' : 'none';
+    
     // User chip
     const chipName = document.getElementById('user-chip-name');
     if(chipName) chipName.innerHTML = '<strong>'+esc(user.displayName||user.email)+'</strong>';
