@@ -2257,7 +2257,7 @@ window.createEvent = async function() {
     document.getElementById('event-location').value = '';
     document.getElementById('event-instructions').value = '';
     document.getElementById('event-start').value = '';
-document.getElementById('event-end').value = '';
+    document.getElementById('event-end').value = '';
     window._eventSlots = ['Morning'];
     renderEventSlots();
     loadEvents();
@@ -2300,12 +2300,11 @@ async function loadEvents() {
       '</div>'
     ).join('');
   } catch(e) {
-    document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+      document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
   }
 }
 async function loadVolunteers() {
- async function loadVolunteers() {
-  const v = document.getElementById('view-volunteers');
+   const v = document.getElementById('view-volunteers');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading volunteers...</div>';
   try {
     const snap = await getDocs(query(collection(db, 'volunteers'), orderBy('registeredAt', 'desc')));
