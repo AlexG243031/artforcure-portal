@@ -85,7 +85,10 @@ exports.onBulkEmailCreated = onDocumentCreated(
     sgMail.setApiKey(SENDGRID_KEY.value());
     const snap = event.data;
     const job = snap.data();
-    const { subject, message, recipients } = job;
+ const { subject, message, recipients } = job;
+    function personalize(text, firstName) {
+      return text.replace(/\{firstName\}/g, firstName || 'Volunteer').replace(/\n/g, '<br>');
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -105,7 +108,7 @@ exports.onBulkEmailCreated = onDocumentCreated(
           <div class="header">
             <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" width="160" style="height:auto; max-width:160px; display:inline-block;" />
           </div>
-          <div class="body">${message}</div>
+                <div class="body">__MESSAGE_PLACEHOLDER__</div>
           <div class="footer">
             Art for Cure &nbsp;|&nbsp; artforcure.org.uk<br/>
             Registered Charity
@@ -115,11 +118,11 @@ exports.onBulkEmailCreated = onDocumentCreated(
       </html>
     `;
 
-    const messages = recipients.map(email => ({
-      to: email,
+      const messages = recipients.map(r => ({
+      to: r.email,
       from: { email: FROM_EMAIL, name: FROM_NAME },
       subject: subject,
-      html: html
+      html: html.replace('__MESSAGE_PLACEHOLDER__', personalize(message, r.firstName))
     }));
 
     try {
