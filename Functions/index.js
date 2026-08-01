@@ -70,3 +70,64 @@ exports.onVolunteerCreated = onDocumentCreated(
       console.error('SendGrid error:', err.response ? err.response.body : err);
     }
   });
+
+
+// ---------------------------------------------------
+// TRIGGER: Bulk email job created -> send to selected volunteers
+// ---------------------------------------------------
+exports.onBulkEmailCreated = onDocumentCreated(
+  {
+    document: 'bulkEmails/{jobId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY],
+  },
+  async (event) => {
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const snap = event.data;
+    const job = snap.data();
+    const { subject, message, recipients } = job;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8"/>
+        <style>
+          body { font-family: Georgia, serif; background: #FAF7F2; margin: 0; padding: 0; }
+          .wrapper { max-width: 560px; margin: 40px auto; background: #FFFFFF; border: 1px solid #DDD8D0; }
+          .header { background: #FFFFFF; padding: 28px 40px; text-align: center; border-bottom: 1px solid #DDD8D0; }
+          .body { padding: 40px; color: #1C1C1C; font-size: 16px; line-height: 1.8; white-space: pre-wrap; }
+          .footer { padding: 24px 40px; border-top: 1px solid #DDD8D0; font-size: 12px; color: #9B9B9B; font-family: sans-serif; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="wrapper">
+          <div class="header">
+            <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" width="160" style="height:auto; max-width:160px; display:inline-block;" />
+          </div>
+          <div class="body">${message}</div>
+          <div class="footer">
+            Art for Cure &nbsp;|&nbsp; artforcure.org.uk<br/>
+            Registered Charity
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const messages = recipients.map(email => ({
+      to: email,
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: subject,
+      html: html
+    }));
+
+    try {
+      await sgMail.send(messages);
+      await snap.ref.update({ status: 'sent', sentAt: new Date() });
+    } catch (e) {
+      await snap.ref.update({ status: 'error', error: e.message });
+    }
+  }
+);
+
