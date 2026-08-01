@@ -2233,9 +2233,9 @@ async function loadVolunteers() {
     let h = '<div class="page-title">Volunteers</div>' +
       '<div class="page-sub">' + vols.length + ' volunteer' + (vols.length !== 1 ? 's' : '') + ' registered.</div>' +
       '<div class="card" style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:10px">Send Bulk Email</div>' +
+      '<div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">Tick the volunteers you want to email below, write a subject and message, then click Send. Use {firstName} anywhere in your message to automatically insert each volunteer\'s first name.</div>' +
       '<input type="text" id="bulk-subject" placeholder="Subject" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
    '<textarea id="bulk-message" placeholder="Message" rows="5" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
-      '<div style="font-size:12px;color:var(--gray-text);margin-bottom:8px">Tip: type {firstName} anywhere in your message and it will be replaced with each volunteer\'s first name.</div>' +
       '<button class="btn" onclick="sendBulkEmail()">Send to Selected Volunteers</button>' +
       '<div id="bulk-status" style="margin-top:8px"></div></div>' +
       '<div class="card" style="padding:0;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
