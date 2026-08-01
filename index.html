@@ -2201,10 +2201,10 @@ window.setCostManually = async function(btn) {
 // ─────────────────────────────────────────
 // VOLUNTEERS
 // ─────────────────────────────────────────
-function toggleAllVolunteers(master) {
+window.toggleAllVolunteers = function(master) {
   document.querySelectorAll('.vol-checkbox').forEach(cb => cb.checked = master.checked);
 }
-async function sendBulkEmail() {
+window.sendBulkEmail = async function() {
   const subject = document.getElementById('bulk-subject').value.trim();
   const message = document.getElementById('bulk-message').value.trim();
   const recipients = Array.from(document.querySelectorAll('.vol-checkbox:checked')).map(cb => cb.value);
