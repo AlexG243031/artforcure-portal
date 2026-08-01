@@ -2207,7 +2207,7 @@ window.toggleAllVolunteers = function(master) {
 window.sendBulkEmail = async function() {
   const subject = document.getElementById('bulk-subject').value.trim();
   const message = document.getElementById('bulk-message').value.trim();
-  const recipients = Array.from(document.querySelectorAll('.vol-checkbox:checked')).map(cb => cb.value);
+  const recipients = Array.from(document.querySelectorAll('.vol-checkbox:checked')).map(cb => ({ email: cb.value, firstName: cb.dataset.firstname || 'Volunteer' }));
   const status = document.getElementById('bulk-status');
   if (!recipients.length) { status.innerHTML = '<span style="color:var(--danger)">Select at least one volunteer.</span>'; return; }
   if (!subject || !message) { status.innerHTML = '<span style="color:var(--danger)">Subject and message are required.</span>'; return; }
@@ -2234,7 +2234,8 @@ async function loadVolunteers() {
       '<div class="page-sub">' + vols.length + ' volunteer' + (vols.length !== 1 ? 's' : '') + ' registered.</div>' +
       '<div class="card" style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:10px">Send Bulk Email</div>' +
       '<input type="text" id="bulk-subject" placeholder="Subject" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
-      '<textarea id="bulk-message" placeholder="Message" rows="5" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
+   '<textarea id="bulk-message" placeholder="Message" rows="5" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
+      '<div style="font-size:12px;color:var(--gray-text);margin-bottom:8px">Tip: type {firstName} anywhere in your message and it will be replaced with each volunteer\'s first name.</div>' +
       '<button class="btn" onclick="sendBulkEmail()">Send to Selected Volunteers</button>' +
       '<div id="bulk-status" style="margin-top:8px"></div></div>' +
       '<div class="card" style="padding:0;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
@@ -2252,7 +2253,7 @@ async function loadVolunteers() {
       const rd = vol.registeredAt && vol.registeredAt.toDate ? vol.registeredAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
       const bg = i % 2 === 0 ? 'var(--white)' : 'var(--gray-bg)';
       h += '<tr style="background:' + bg + ';border-bottom:1px solid var(--gray-border)">' +
-        '<td style="padding:10px 14px"><input type="checkbox" class="vol-checkbox" value="' + esc(vol.email || '') + '"></td>' +
+        '<td style="padding:10px 14px"><input type="checkbox" class="vol-checkbox" value="' + esc(vol.email || '') + '" data-firstname="' + esc(vol.firstName || '') + '"></td>' +
         '<td style="padding:10px 14px;font-weight:700;color:var(--dark)">' + nm + '</td>' +
         '<td style="padding:10px 14px"><a href="mailto:' + esc(vol.email || '') + '" style="color:var(--pink);text-decoration:none">' + esc(vol.email || '-') + '</a></td>' +
         '<td style="padding:10px 14px;color:var(--gray-text)">' + esc(vol.mobile || '-') + '</td>' +
