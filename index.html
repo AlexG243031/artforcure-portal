@@ -242,8 +242,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
-      <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">Volunteers</button>
-      <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">Volunteers</button>
+      <button class="nav-tab" id="tab-events" style="display:none;" onclick="showTab('events')">📅 Events</button>
       <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
     </div>
@@ -261,8 +260,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-orders" style="display:none;"></div>
     <div id="view-archive" style="display:none;"></div>
     <div id="view-volunteers" style="display:none;"></div>
-    <div id="view-volunteers" style="display:none;"></div>
-  </div>
+    </div>
 </div>
 
 <script type="module">
@@ -346,7 +344,7 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','admin','orders','archive','settings','volunteers'].forEach(t=>{
+  ['submit','artist','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -355,7 +353,7 @@ window.showTab = function(tab) {
   if(tab==='archive') loadArchive();
   if(tab==='settings') loadSettings();
   if(tab==='volunteers') loadVolunteers();
-  if(tab==='volunteers') loadVolunteers();
+  if(tab==='events') loadEvents();
 };
 
 // ── Image helpers ──
@@ -2217,6 +2215,178 @@ window.sendBulkEmail = async function() {
     status.innerHTML = '<span style="color:var(--success)">Email queued for ' + recipients.length + ' volunteer(s).</span>';
   } catch(e) {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+window._eventSlots = ['Morning'];
+window.addEventSlot = function() {
+  window._eventSlots.push('');
+  renderEventSlots();
+}
+window.removeEventSlot = function(i) {
+  window._eventSlots.splice(i, 1);
+  renderEventSlots();
+}
+window.updateEventSlot = function(i, val) {
+  window._eventSlots[i] = val;
+}
+function renderEventSlots() {
+  const c = document.getElementById('event-slots-list');
+  if (!c) return;
+  c.innerHTML = window._eventSlots.map((s, i) =>
+    '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+    '<input type="text" value="' + esc(s) + '" placeholder="e.g. Morning" oninput="updateEventSlot(' + i + ', this.value)" style="flex:1;padding:8px;border:1px solid var(--gray-border);border-radius:4px">' +
+    (window._eventSlots.length > 1 ? '<button type="button" class="btn btn-sm btn-secondary" onclick="removeEventSlot(' + i + ')">Remove</button>' : '') +
+    '</div>'
+  ).join('');
+}
+window.createEvent = async function() {
+  const title = document.getElementById('event-title').value.trim();
+  const location = document.getElementById('event-location').value.trim();
+  const instructions = document.getElementById('event-instructions').value.trim();
+  const startDate = document.getElementById('event-start').value;
+  const endDate = document.getElementById('event-end').value;
+  const slots = window._eventSlots.map(s => s.trim()).filter(Boolean);
+  const status = document.getElementById('event-status');
+  if (!title || !startDate || !endDate) { status.innerHTML = '<span style="color:var(--danger)">Title, start date and end date are required.</span>'; return; }
+  if (!slots.length) { status.innerHTML = '<span style="color:var(--danger)">Add at least one time slot.</span>'; return; }
+  status.innerHTML = 'Creating...';
+  try {
+    await addDoc(collection(db, 'events'), { title, location, instructions, startDate, endDate, slots, createdAt: serverTimestamp() });
+    status.innerHTML = '<span style="color:var(--success)">Event created.</span>';
+    document.getElementById('event-title').value = '';
+    document.getElementById('event-location').value = '';
+    document.getElementById('event-instructions').value = '';
+    document.getElementById('event-start').value = '';
+    document.getElementById('event-end').value = '';
+    window._eventSlots = ['Morning'];
+    renderEventSlots();
+    loadEvents();
+  } catch(e) {
+    status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+async function loadEvents() {
+  const v = document.getElementById('view-events');
+  v.innerHTML = '<div class="page-title">Events</div>' +
+    '<div class="card" style="margin-bottom:16px">' +
+    '<div style="font-weight:700;margin-bottom:10px">Create Event</div>' +
+    '<input type="text" id="event-title" placeholder="Title" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<input type="text" id="event-location" placeholder="Location" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<textarea id="event-instructions" placeholder="Instructions" rows="3" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
+    '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+    '<div style="flex:1"><label style="font-size:11px;color:var(--gray-text)">Start Date</label><input type="date" id="event-start" style="width:100%;padding:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></div>' +
+    '<div style="flex:1"><label style="font-size:11px;color:var(--gray-text)">End Date</label><input type="date" id="event-end" style="width:100%;padding:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></div>' +
+    '</div>' +
+    '<label style="font-size:11px;color:var(--gray-text)">Time Slots (applies to every day)</label>' +
+    '<div id="event-slots-list" style="margin-top:6px"></div>' +
+    '<button type="button" class="btn btn-sm btn-secondary" onclick="addEventSlot()" style="margin-bottom:10px">+ Add Slot</button><br>' +
+    '<button class="btn" onclick="createEvent()">Create Event</button>' +
+    '<div id="event-status" style="margin-top:8px"></div>' +
+    '</div>' +
+    '<div id="events-list"></div>';
+  renderEventSlots();
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), orderBy('startDate', 'desc')));
+    const evs = [];
+    snap.forEach(d => evs.push({ id: d.id, ...d.data() }));
+    const list = document.getElementById('events-list');
+    if (!evs.length) { list.innerHTML = '<div class="empty-state"><h3>No events created yet.</h3></div>'; return; }
+    list.innerHTML = evs.map(ev =>
+      '<div class="card" style="margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:15px">' + esc(ev.title || '') + '</div>' +
+      '<div style="color:var(--gray-text);font-size:13px;margin-bottom:6px">' + esc(ev.location || '') + ' &nbsp;|&nbsp; ' + esc(ev.startDate || '') + ' to ' + esc(ev.endDate || '') + '</div>' +
+      '<div style="font-size:13px;margin-bottom:6px">' + esc(ev.instructions || '') + '</div>' +
+      '<div style="font-size:12px;color:var(--gray-text)">Slots: ' + (ev.slots || []).map(esc).join(', ') + '</div>' +
+      '</div>'
+    ).join('');
+  } catch(e) {
+    document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+  }
+}
+window._eventSlots = ['Morning'];
+window.addEventSlot = function() {
+  window._eventSlots.push('');
+  renderEventSlots();
+}
+window.removeEventSlot = function(i) {
+  window._eventSlots.splice(i, 1);
+  renderEventSlots();
+}
+window.updateEventSlot = function(i, val) {
+  window._eventSlots[i] = val;
+}
+function renderEventSlots() {
+  const c = document.getElementById('event-slots-list');
+  if (!c) return;
+  c.innerHTML = window._eventSlots.map((s, i) =>
+    '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+    '<input type="text" value="' + esc(s) + '" placeholder="e.g. Morning" oninput="updateEventSlot(' + i + ', this.value)" style="flex:1;padding:8px;border:1px solid var(--gray-border);border-radius:4px">' +
+    (window._eventSlots.length > 1 ? '<button type="button" class="btn btn-sm btn-secondary" onclick="removeEventSlot(' + i + ')">Remove</button>' : '') +
+    '</div>'
+  ).join('');
+}
+window.createEvent = async function() {
+  const title = document.getElementById('event-title').value.trim();
+  const location = document.getElementById('event-location').value.trim();
+  const instructions = document.getElementById('event-instructions').value.trim();
+  const startDate = document.getElementById('event-start').value;
+  const endDate = document.getElementById('event-end').value;
+  const slots = window._eventSlots.map(s => s.trim()).filter(Boolean);
+  const status = document.getElementById('event-status');
+  if (!title || !startDate || !endDate) { status.innerHTML = '<span style="color:var(--danger)">Title, start date and end date are required.</span>'; return; }
+  if (!slots.length) { status.innerHTML = '<span style="color:var(--danger)">Add at least one time slot.</span>'; return; }
+  status.innerHTML = 'Creating...';
+  try {
+    await addDoc(collection(db, 'events'), { title, location, instructions, startDate, endDate, slots, createdAt: serverTimestamp() });
+    status.innerHTML = '<span style="color:var(--success)">Event created.</span>';
+    document.getElementById('event-title').value = '';
+    document.getElementById('event-location').value = '';
+    document.getElementById('event-instructions').value = '';
+    document.getElementById('event-start').value = '';
+    document.getElementById('event-end').value = '';
+    window._eventSlots = ['Morning'];
+    renderEventSlots();
+    loadEvents();
+  } catch(e) {
+    status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+async function loadEvents() {
+  const v = document.getElementById('view-events');
+  v.innerHTML = '<div class="page-title">Events</div>' +
+    '<div class="card" style="margin-bottom:16px">' +
+    '<div style="font-weight:700;margin-bottom:10px">Create Event</div>' +
+    '<input type="text" id="event-title" placeholder="Title" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<input type="text" id="event-location" placeholder="Location" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<textarea id="event-instructions" placeholder="Instructions" rows="3" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
+    '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+    '<div style="flex:1"><label style="font-size:11px;color:var(--gray-text)">Start Date</label><input type="date" id="event-start" style="width:100%;padding:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></div>' +
+    '<div style="flex:1"><label style="font-size:11px;color:var(--gray-text)">End Date</label><input type="date" id="event-end" style="width:100%;padding:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></div>' +
+    '</div>' +
+    '<label style="font-size:11px;color:var(--gray-text)">Time Slots (applies to every day)</label>' +
+    '<div id="event-slots-list" style="margin-top:6px"></div>' +
+    '<button type="button" class="btn btn-sm btn-secondary" onclick="addEventSlot()" style="margin-bottom:10px">+ Add Slot</button><br>' +
+    '<button class="btn" onclick="createEvent()">Create Event</button>' +
+    '<div id="event-status" style="margin-top:8px"></div>' +
+    '</div>' +
+    '<div id="events-list"></div>';
+  renderEventSlots();
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), orderBy('startDate', 'desc')));
+    const evs = [];
+    snap.forEach(d => evs.push({ id: d.id, ...d.data() }));
+    const list = document.getElementById('events-list');
+    if (!evs.length) { list.innerHTML = '<div class="empty-state"><h3>No events created yet.</h3></div>'; return; }
+    list.innerHTML = evs.map(ev =>
+      '<div class="card" style="margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:15px">' + esc(ev.title || '') + '</div>' +
+      '<div style="color:var(--gray-text);font-size:13px;margin-bottom:6px">' + esc(ev.location || '') + ' &nbsp;|&nbsp; ' + esc(ev.startDate || '') + ' to ' + esc(ev.endDate || '') + '</div>' +
+      '<div style="font-size:13px;margin-bottom:6px">' + esc(ev.instructions || '') + '</div>' +
+      '<div style="font-size:12px;color:var(--gray-text)">Slots: ' + (ev.slots || []).map(esc).join(', ') + '</div>' +
+      '</div>'
+    ).join('');
+  } catch(e) {
+    document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
   }
 }
 async function loadVolunteers() {
