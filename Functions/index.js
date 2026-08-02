@@ -85,7 +85,16 @@ exports.onBulkEmailCreated = onDocumentCreated(
     sgMail.setApiKey(SENDGRID_KEY.value());
     const snap = event.data;
     const job = snap.data();
- const { subject, message, recipients } = job;
+ const { subject, message, recipients, createLogins } = job;
+    async function getOrCreateLoginLink(email) {
+      let userRecord;
+      try {
+        userRecord = await admin.auth().getUserByEmail(email);
+      } catch (e) {
+        userRecord = await admin.auth().createUser({ email });
+      }
+      return admin.auth().generatePasswordResetLink(email);
+    }
     function personalize(text, firstName) {
       return text.replace(/\{firstName\}/g, firstName || 'Volunteer').replace(/\n/g, '<br>');
     }
@@ -118,12 +127,24 @@ exports.onBulkEmailCreated = onDocumentCreated(
       </html>
     `;
 
-      const messages = recipients.map(r => ({
-      to: r.email,
-      from: { email: FROM_EMAIL, name: FROM_NAME },
-      subject: subject,
-      html: html.replace('__MESSAGE_PLACEHOLDER__', personalize(message, r.firstName))
-    }));
+      const messages = [];
+    for (const r of recipients) {
+      let personalMessage = personalize(message, r.firstName);
+      if (createLogins) {
+        try {
+          const loginLink = await getOrCreateLoginLink(r.email);
+          personalMessage += '<br/><br/><a href="' + loginLink + '" style="color:#D30180;font-weight:700">Set up your login to view event details and pick your slots</a>';
+        } catch (e) {
+          console.error('Login link error for', r.email, e);
+        }
+      }
+      messages.push({
+        to: r.email,
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: subject,
+        html: html.replace('__MESSAGE_PLACEHOLDER__', personalMessage)
+      });
+    }
 
     try {
       await sgMail.send(messages);

@@ -2219,7 +2219,8 @@ window.sendBulkEmail = async function() {
   if (!subject || !message) { status.innerHTML = '<span style="color:var(--danger)">Subject and message are required.</span>'; return; }
   status.innerHTML = 'Sending...';
   try {
-    await addDoc(collection(db, 'bulkEmails'), { subject, message, recipients, createdAt: serverTimestamp(), status: 'pending' });
+    const createLogins = document.getElementById('bulk-create-logins').checked;
+    await addDoc(collection(db, 'bulkEmails'), { subject, message, recipients, createLogins, createdAt: serverTimestamp(), status: 'pending' });
     status.innerHTML = '<span style="color:var(--success)">Email queued for ' + recipients.length + ' volunteer(s).</span>';
   } catch(e) {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
@@ -2357,6 +2358,7 @@ if (!vols.length) {
       '<div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">Tick the volunteers you want to email below, write a subject and message, then click Send. Use {firstName} anywhere in your message to automatically insert each volunteer\'s first name.</div>' +
       '<input type="text" id="bulk-subject" placeholder="Subject" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
    '<textarea id="bulk-message" placeholder="Message" rows="5" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box"></textarea>' +
+     '<label style="font-size:12px;color:var(--gray-text);display:flex;align-items:center;gap:6px;margin-bottom:10px"><input type="checkbox" id="bulk-create-logins"> This is an event announcement — also set up login access for anyone who doesn\'t have it yet</label>' +
       '<button class="btn" onclick="sendBulkEmail()">Send to Selected Volunteers</button>' +
       '<div id="bulk-status" style="margin-top:8px"></div></div>' +
     '<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
