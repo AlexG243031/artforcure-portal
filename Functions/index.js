@@ -46,13 +46,13 @@ exports.onVolunteerCreated = onDocumentCreated(
             </div>
             <div class="body">
               <h2>Dear ${firstName},</h2>
-              <p>What wonderful news! We are absolutely thrilled and deeply grateful that you have chosen to give your precious time to volunteer with Art for Cure. It truly means the world to us.</p>
-              <p>Volunteers like you are the beating heart of everything we do. Without your generosity and warmth, our events simply would not be the magical, life-affirming occasions they are — occasions that bring art, beauty, and hope to those who need it most.</p>
-              <p>We are so very much looking forward to welcoming you into the Art for Cure family. Ahead of our next event, we will be in touch to let you know the details and to find out when you might be available. There is no pressure at all — we understand life is busy — and every hour you are able to give will be treasured.</p>
-              <p>In the meantime, if you have any questions at all, please do not hesitate to get in touch. We are always delighted to hear from you.</p>
-              <p>With the most heartfelt thanks and warm wishes,</p>
-              <p><strong>Belinda</strong><br/>
-              <em>Art for Cure</em></p>
+          <p>That is great news! We are so grateful that you have chosen to give your valuable time to volunteer with Art for Cure. Our charity now supports so many support services within East Anglia and women affected by breast cancer as well as UK leading research. Your support to the charity is truly appreciated.</p>
+          <p>Volunteers are the beating heart of everything we do, and we cannot run our events without you.</p>
+          <p>We look forward to welcoming you and giving you details about our upcoming events and how you can help.</p>
+          <p>In the meantime, if you have any questions at all, please do not hesitate to get in touch.</p>
+          <p>With the most heartfelt thanks and warm wishes,</p>
+          <p><strong>Belinda Gray MBE - Founder</strong><br/>
+          <em>Art for Cure</em></p>
             </div>
             <div class="footer">
               Art for Cure &nbsp;|&nbsp; artforcure.org.uk<br/>
