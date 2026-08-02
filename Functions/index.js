@@ -86,14 +86,19 @@ exports.onBulkEmailCreated = onDocumentCreated(
     const snap = event.data;
     const job = snap.data();
  const { subject, message, recipients, createLogins } = job;
-    async function getOrCreateLoginLink(email) {
-      let userRecord;
+    async function ensureLoginAndSendReset(email) {
       try {
-        userRecord = await admin.auth().getUserByEmail(email);
+        await admin.auth().getUserByEmail(email);
       } catch (e) {
-        userRecord = await admin.auth().createUser({ email });
+        await admin.auth().createUser({ email });
       }
-      return admin.auth().generatePasswordResetLink(email);
+      const resp = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw5So', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email: email })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
     }
     function personalize(text, firstName) {
       return text.replace(/\{firstName\}/g, firstName || 'Volunteer').replace(/\n/g, '<br>');
@@ -132,10 +137,10 @@ exports.onBulkEmailCreated = onDocumentCreated(
       let personalMessage = personalize(message, r.firstName);
       if (createLogins) {
         try {
-          const loginLink = await getOrCreateLoginLink(r.email);
-          personalMessage += '<br/><br/><a href="' + loginLink + '" style="color:#D30180;font-weight:700">Set up your login to view event details and pick your slots</a>';
+          await ensureLoginAndSendReset(r.email);
+          personalMessage += '<br/><br/><em>You will also receive a separate email shortly with a link to set up your login password.</em>';
         } catch (e) {
-          console.error('Login link error for', r.email, e);
+          console.error('Login setup error for', r.email, e);
         }
       }
       messages.push({
