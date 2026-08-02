@@ -137,10 +137,10 @@ exports.onBulkEmailCreated = onDocumentCreated(
       let personalMessage = personalize(message, r.firstName);
       if (createLogins) {
         try {
-          await ensureLoginAndSendReset(r.email);
-          personalMessage += '<br/><br/><em>You will also receive a separate email shortly with a link to set up your login password.</em>';
+          const loginLink = await getOrCreateLoginLink(r.email);
+          personalMessage += '<br/><br/><a href="' + loginLink + '" style="color:#D30180;font-weight:700">Set up your login to view event details and pick your slots</a>';
         } catch (e) {
-          console.error('Login setup error for', r.email, e);
+          console.error('Login link error for', r.email, e);
         }
       }
       messages.push({
