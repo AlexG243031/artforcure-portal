@@ -296,7 +296,7 @@
 <!-- Firebase -->
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-  import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   const firebaseConfig = {
     apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw5So",
@@ -332,8 +332,13 @@
       status: 'active'
     };
 
-    try {
-      await addDoc(collection(db, 'volunteers'), volunteer);
+  try {
+      const existing = await getDocs(query(collection(db, 'volunteers'), where('email', '==', volunteer.email)));
+      if (!existing.empty) {
+        await updateDoc(doc(db, 'volunteers', existing.docs[0].id), volunteer);
+      } else {
+        await addDoc(collection(db, 'volunteers'), volunteer);
+      }
       document.getElementById('form-section').style.display = 'none';
       document.getElementById('success-msg').style.display = 'block';
     } catch (err) {
