@@ -2333,10 +2333,53 @@ async function loadEvents() {
       '<div style="font-size:13px;margin-bottom:6px">' + esc(ev.instructions || '') + '</div>' +
 '<div style="font-size:12px;color:var(--gray-text)">Slot types: ' + (ev.slotDefs || []).map(esc).join(', ') + '</div>' +
       '<div style="font-size:12px;color:var(--gray-text)">Total bookable slots generated: ' + ((ev.bookableSlots || []).length) + '</div>' +
-      '</div>'
+      '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\', \'' + esc(ev.title||'').replace(/'/g,"\\'") + '\', \'' + esc(ev.location||'').replace(/'/g,"\\'") + '\', \'' + esc(ev.instructions||'').replace(/'/g,"\\'") + '\')">Edit Details</button> ' +
+      '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button>' +
+      '<div id="add-day-form-' + ev.id + '"></div>' +
+      '</div>' +
     ).join('');
   } catch(e) {
       document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+  }
+}
+window.editEventDetails = function(id, title, location, instructions) {
+  const newTitle = prompt('Title:', title);
+  if (newTitle === null) return;
+  const newLocation = prompt('Location:', location);
+  if (newLocation === null) return;
+  const newInstructions = prompt('Instructions:', instructions);
+  if (newInstructions === null) return;
+  updateDoc(doc(db, 'events', id), { title: newTitle, location: newLocation, instructions: newInstructions })
+    .then(() => loadEvents())
+    .catch(e => alert('Error: ' + e.message));
+}
+window.showAddDayForm = function(eventId) {
+  const c = document.getElementById('add-day-form-' + eventId);
+  c.innerHTML = '<div style="margin-top:10px;padding:10px;background:var(--pink-light);border-radius:6px">' +
+    '<label style="font-size:11px;color:var(--gray-text)">Date to add</label>' +
+    '<input type="date" id="extra-day-date-' + eventId + '" style="width:100%;padding:8px;margin:6px 0;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<button class="btn btn-sm" onclick="addExtraDay(\'' + eventId + '\')">Add This Day</button>' +
+    '<div id="extra-day-status-' + eventId + '"></div></div>';
+}
+window.addExtraDay = async function(eventId) {
+  const dateInput = document.getElementById('extra-day-date-' + eventId).value;
+  const status = document.getElementById('extra-day-status-' + eventId);
+  if (!dateInput) { status.innerHTML = '<span style="color:var(--danger)">Pick a date.</span>'; return; }
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), where('__name__', '==', eventId)));
+    let eventDoc;
+    snap.forEach(d => eventDoc = { id: d.id, ...d.data() });
+    const existing = eventDoc.bookableSlots || [];
+    if (existing.some(s => s.date === dateInput)) {
+      status.innerHTML = '<span style="color:var(--danger)">That date already has slots.</span>';
+      return;
+    }
+    const newSlots = (eventDoc.slotDefs || []).map(name => ({ date: dateInput, slotName: name, capacity: null, booked: [] }));
+    await updateDoc(doc(db, 'events', eventId), { bookableSlots: [...existing, ...newSlots] });
+    status.innerHTML = '<span style="color:var(--success)">Day added.</span>';
+    loadEvents();
+  } catch (e) {
+    status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
   }
 }
 async function loadVolunteers() {
