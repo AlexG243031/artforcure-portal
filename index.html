@@ -1930,6 +1930,15 @@ async function loadOrders() {
     const ackSnap = await getDocs(collection(db,'order_acknowledgements'));
     const acked = new Set(); ackSnap.forEach(d=>acked.add(d.id));
 
+    // Load already-notified sale IDs (so we only email the artist once per sale)
+    const notifiedSnap = await getDocs(collection(db,'sale_notifications'));
+    const notified = new Set(); notifiedSnap.forEach(d=>notified.add(d.id));
+
+    // Build a lookup of Shopify product ID -> submission, so we know which artist to notify
+    const allSubsSnap = await getDocs(collection(db,'submissions'));
+    const subsByShopifyId = {};
+    allSubsSnap.forEach(d=>{ const data=d.data(); if(data.shopifyId) subsByShopifyId[String(data.shopifyId)] = {id:d.id, ...data}; });
+
     if(!orders.length) { v.innerHTML='<div class="page-title">Orders</div><div class="empty-state"><h3>No orders yet.</h3></div>'; return; }
 
     let html = '<div class="page-title">Orders</div><div class="page-sub">Orders from Shopify. Bold = unacknowledged. Click Acknowledged once reviewed.</div>';
@@ -1954,6 +1963,23 @@ async function loadOrders() {
                     manualCostMap[pidKey] != null ? manualCostMap[pidKey] :
                     costMap[pidKey] != null ? costMap[pidKey] : null;
         const afc = cos != null ? price - cos : null;
+
+        // Notify the artist by email the first time we see this sale
+        const matchedSub = subsByShopifyId[pidKey];
+        if(matchedSub && matchedSub.artist && matchedSub.artist.email && !notified.has(orderId)) {
+          try {
+            await addDoc(collection(db,'saleEmails'), {
+              artistEmail: matchedSub.artist.email,
+              artistName: matchedSub.artist.name || 'there',
+              pieceName: matchedSub.piece?.name || item.title || 'your piece',
+              salePrice: fmt(price),
+              createdAt: serverTimestamp(),
+              status: 'pending'
+            });
+            await setDoc(doc(db,'sale_notifications', orderId), { notifiedAt: nowStr() });
+            notified.add(orderId);
+          } catch(e) { console.warn('Sale notification failed for', orderId, e); }
+        }
 
         // Use collection name if found, fall back to vendor
         const collectionName = collectionMap[item.product_id] || item.vendor || '';

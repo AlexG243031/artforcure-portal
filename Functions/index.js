@@ -1,4 +1,5 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
@@ -168,3 +169,80 @@ exports.onBulkEmailCreated = onDocumentCreated(
   }
 );
 
+// ---------------------------------------------------
+// SCHEDULED: Check Shopify for new sales twice daily (12:00 and 22:00 UK time)
+// ---------------------------------------------------
+exports.checkForNewSales = onSchedule(
+  {
+    schedule: '0 12,22 * * *',
+    timeZone: 'Europe/London',
+    region: 'europe-west2',
+  },
+  async (event) => {
+    const db = admin.firestore();
+
+    // Load Shopify integration settings
+    const intgDoc = await db.collection('settings').doc('integrations').get();
+    if (!intgDoc.exists) { console.warn('No integration settings found — skipping sale check.'); return; }
+    const intg = intgDoc.data();
+    const { shopifyStore: store, shopifyClientId: clientId, shopifyClientSecret: clientSecret, shopifyWorker } = intg;
+    const worker = (shopifyWorker || 'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/, '');
+    if (!store || !clientId || !clientSecret) { console.warn('Shopify credentials incomplete — skipping sale check.'); return; }
+
+    // Get a fresh access token
+    const tokenRes = await fetch(worker + '/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, clientSecret, shop: store }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok) { console.error('Shopify token fetch failed:', tokenData); return; }
+    const token = tokenData.access_token;
+
+    // Fetch recent orders
+    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,line_items', {
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store }
+    });
+    if (!ordersRes.ok) { console.error('Shopify orders fetch failed:', await ordersRes.text()); return; }
+    const ordersData = await ordersRes.json();
+    const orders = ordersData.orders || [];
+
+    // Load already-notified sale IDs
+    const notifiedSnap = await db.collection('sale_notifications').get();
+    const notified = new Set(); notifiedSnap.forEach(d => notified.add(d.id));
+
+    // Build a lookup of Shopify product ID -> submission (artist details)
+    const subsSnap = await db.collection('submissions').get();
+    const subsByShopifyId = {};
+    subsSnap.forEach(d => { const data = d.data(); if (data.shopifyId) subsByShopifyId[String(data.shopifyId)] = data; });
+
+    let newSalesFound = 0;
+
+    for (const order of orders) {
+      for (const item of (order.line_items || [])) {
+        const orderId = order.id + '_' + item.id;
+        if (notified.has(orderId)) continue;
+        const matchedSub = subsByShopifyId[String(item.product_id)];
+        if (!matchedSub || !matchedSub.artist || !matchedSub.artist.email) continue;
+
+        const price = parseFloat(item.price) || 0;
+        try {
+          await db.collection('saleEmails').add({
+            artistEmail: matchedSub.artist.email,
+            artistName: matchedSub.artist.name || 'there',
+            pieceName: matchedSub.piece?.name || item.title || 'your piece',
+            salePrice: '£' + price.toFixed(2),
+            createdAt: new Date(),
+            status: 'pending'
+          });
+          await db.collection('sale_notifications').doc(orderId).set({ notifiedAt: new Date().toISOString() });
+          notified.add(orderId);
+          newSalesFound++;
+        } catch (e) {
+          console.error('Failed to queue sale email for', orderId, e);
+        }
+      }
+    }
+    console.log('Sale check complete. New sales notified:', newSalesFound);
+  }
+);
