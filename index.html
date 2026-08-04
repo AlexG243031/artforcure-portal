@@ -735,21 +735,22 @@ window.submitAnother = function(){
 // ─────────────────────────────────────────
 // ARTIST PORTAL
 // ─────────────────────────────────────────
-function renderArtistPortal(){
+function renderArtistPortal(prefillEmail){
   document.getElementById('view-artist').innerHTML=`
     <div class="page-title">Your Submission</div>
     <div class="page-sub">Enter the email address you submitted with to view your artwork details.</div>
     <div class="card">
       <div class="lookup-row">
-        <input id="lookup-email" type="email" placeholder="Your email address" onkeydown="if(event.key==='Enter')lookupArtist()"/>
+        <input id="lookup-email" type="email" placeholder="Your email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupArtist()"/>
         <button class="btn btn-primary" onclick="lookupArtist()">Look Up</button>
       </div>
       <div id="lookup-result"></div>
     </div>
     <div id="artist-details"></div>`;
+  if(prefillEmail) lookupArtist(prefillEmail);
 }
-window.lookupArtist = async function(){
-  const email=document.getElementById('lookup-email').value.trim().toLowerCase();
+window.lookupArtist = async function(presetEmail){
+  const email=(presetEmail || document.getElementById('lookup-email').value.trim()).toLowerCase();
   if(!email)return;
   const res=document.getElementById('lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
@@ -762,22 +763,23 @@ window.lookupArtist = async function(){
   }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
 };
 
-function renderSalesPortal(){
+function renderSalesPortal(prefillEmail){
   document.getElementById('view-sales').innerHTML=`
     <div class="page-title">My Sales</div>
     <div class="page-sub">Enter the email address you submitted with to view your sales.</div>
     <div class="card">
       <div class="lookup-row">
-        <input id="sales-lookup-email" type="email" placeholder="Your email address" onkeydown="if(event.key==='Enter')lookupSales()"/>
+        <input id="sales-lookup-email" type="email" placeholder="Your email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupSales()"/>
         <button class="btn btn-primary" onclick="lookupSales()">Look Up</button>
       </div>
       <div id="sales-lookup-result"></div>
     </div>
     <div id="sales-details"></div>`;
+  if(prefillEmail) lookupSales(prefillEmail);
 }
 
-window.lookupSales = async function(){
-  const email=document.getElementById('sales-lookup-email').value.trim().toLowerCase();
+window.lookupSales = async function(presetEmail){
+  const email=(presetEmail || document.getElementById('sales-lookup-email').value.trim()).toLowerCase();
   if(!email)return;
   const res=document.getElementById('sales-lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
@@ -1745,8 +1747,8 @@ onAuthStateChanged(auth, async (user) => {
 
     // Boot app
     try { renderSubmit(); } catch(e) { console.error(e); }
-    try { renderArtistPortal(); } catch(e) { console.error(e); }
-    try { renderSalesPortal(); } catch(e) { console.error(e); }
+    try { renderArtistPortal(user.email); } catch(e) { console.error(e); }
+    try { renderSalesPortal(user.email); } catch(e) { console.error(e); }
     loadEmailSettings().catch(e => console.warn('Settings load error:', e));
 
     // If artist (not admin), go straight to submit tab
