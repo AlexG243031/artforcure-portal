@@ -446,6 +446,20 @@ function defaultState(){
     piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}};
 }
 
+async function bootSubmitTab(email){
+  if(email){
+    const profile = await lookupArtistProfile(email);
+    const base = defaultState();
+    if(profile){
+      renderSubmit({...base, artist:{name:profile.name||'',email:profile.email||email,mobile:profile.mobile||'',website:profile.website||'',bio:profile.bio||'',photoUrl:profile.photoUrl||''}, profileFound:true});
+      return;
+    }
+    renderSubmit({...base, artist:{...base.artist, email}});
+    return;
+  }
+  renderSubmit();
+}
+
 function renderSubmit(state){
   if(!state)state=defaultState();
   const v=document.getElementById('view-submit');
@@ -736,16 +750,17 @@ window.submitAnother = function(){
 // ARTIST PORTAL
 // ─────────────────────────────────────────
 function renderArtistPortal(prefillEmail){
-  document.getElementById('view-artist').innerHTML=`
-    <div class="page-title">Your Submission</div>
-    <div class="page-sub">Enter the email address you submitted with to view your artwork details.</div>
-    <div class="card">
+  const lookupBlock = _isAdmin ? `<div class="card">
       <div class="lookup-row">
-        <input id="lookup-email" type="email" placeholder="Your email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupArtist()"/>
+        <input id="lookup-email" type="email" placeholder="Artist's email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupArtist()"/>
         <button class="btn btn-primary" onclick="lookupArtist()">Look Up</button>
       </div>
       <div id="lookup-result"></div>
-    </div>
+    </div>` : `<div id="lookup-result"></div>`;
+  document.getElementById('view-artist').innerHTML=`
+    <div class="page-title">Your Submission</div>
+    <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their submission." : "Here's your current submission."}</div>
+    ${lookupBlock}
     <div id="artist-details"></div>`;
   if(prefillEmail) lookupArtist(prefillEmail);
 }
@@ -764,16 +779,17 @@ window.lookupArtist = async function(presetEmail){
 };
 
 function renderSalesPortal(prefillEmail){
-  document.getElementById('view-sales').innerHTML=`
-    <div class="page-title">My Sales</div>
-    <div class="page-sub">Enter the email address you submitted with to view your sales.</div>
-    <div class="card">
+  const lookupBlock = _isAdmin ? `<div class="card">
       <div class="lookup-row">
-        <input id="sales-lookup-email" type="email" placeholder="Your email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupSales()"/>
+        <input id="sales-lookup-email" type="email" placeholder="Artist's email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupSales()"/>
         <button class="btn btn-primary" onclick="lookupSales()">Look Up</button>
       </div>
       <div id="sales-lookup-result"></div>
-    </div>
+    </div>` : `<div id="sales-lookup-result"></div>`;
+  document.getElementById('view-sales').innerHTML=`
+    <div class="page-title">My Sales</div>
+    <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their sales." : "Here are your current sales."}</div>
+    ${lookupBlock}
     <div id="sales-details"></div>`;
   if(prefillEmail) lookupSales(prefillEmail);
 }
@@ -1746,7 +1762,7 @@ onAuthStateChanged(auth, async (user) => {
     const btn=document.getElementById('login-btn'); if(btn){btn.disabled=false;btn.textContent='Sign In';}
 
     // Boot app
-    try { renderSubmit(); } catch(e) { console.error(e); }
+    try { await bootSubmitTab(_isAdmin ? null : user.email); } catch(e) { console.error(e); }
     try { renderArtistPortal(user.email); } catch(e) { console.error(e); }
     try { renderSalesPortal(user.email); } catch(e) { console.error(e); }
     loadEmailSettings().catch(e => console.warn('Settings load error:', e));
