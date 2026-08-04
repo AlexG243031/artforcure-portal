@@ -2336,7 +2336,7 @@ async function loadEvents() {
       '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\')">Edit Details</button> ' +
       '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button>' +
       '<div id="add-day-form-' + ev.id + '"></div>' +
-      '</div>' +
+      '</div>'
     ).join('');
   } catch(e) {
       document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
