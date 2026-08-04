@@ -235,7 +235,16 @@ exports.checkForNewSales = onSchedule(
             createdAt: new Date(),
             status: 'pending'
           });
-          await db.collection('sale_notifications').doc(orderId).set({ notifiedAt: new Date().toISOString() });
+          await db.collection('sale_notifications').doc(orderId).set({
+            notifiedAt: new Date().toISOString(),
+            artistEmail: matchedSub.artist.email,
+            artistName: matchedSub.artist.name || '',
+            pieceName: matchedSub.piece?.name || item.title || '',
+            salePrice: price,
+            buyerName: [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Unknown',
+            submissionId: matchedSub.id || '',
+            fulfilled: false
+          });
           notified.add(orderId);
           newSalesFound++;
         } catch (e) {
