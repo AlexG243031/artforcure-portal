@@ -71,6 +71,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 .badge-pending { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
 .badge-approved { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
 .badge-rejected { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); }
+.badge-withdrawn { background: var(--gray-bg); color: var(--gray-text); border: 1px solid var(--gray-border); }
 .sub-card { background: var(--white); border: 1px solid var(--gray-border); border-radius: 11px; padding: 1.25rem; margin-bottom: 1rem; transition: box-shadow 0.15s, border-color 0.15s; }
 .sub-card:hover { box-shadow: 0 2px 14px rgba(232,66,122,0.09); border-color: var(--pink-mid); }
 .sub-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
@@ -852,7 +853,10 @@ function renderArtistDetails(subs){
         <div><div class="detail-label">Submitted</div><div class="detail-value">${sub.submittedAt}</div></div>
       </div>
       ${imgHtml}
-      ${sub.status==='pending'?`<div style="margin-top:1rem"><button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button></div>`:''}
+      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        ${sub.status==='pending'?`<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`:''}
+        ${sub.status!=='withdrawn'&&sub.status!=='rejected'?`<button class="btn btn-danger btn-sm" onclick="withdrawSubmission('${sub.id}')">Withdraw</button>`:''}
+      </div>
       ${al?`<div class="audit-log" style="margin-top:1rem"><div class="audit-title">History</div>${al}</div>`:''}
     </div>`;
   }).join('');
@@ -863,6 +867,43 @@ window.editSubmission=function(id){
   window._editSub=sub; window._editImages=[...(sub.images||[])]; window._editNewImages=[];
   renderEditForm(sub);
 };
+
+window.withdrawSubmission = async function(id){
+  const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
+  const wasLive = !!sub.shopifyId;
+  const warning = wasLive ? '\n\nThis piece is currently live on Shopify — Art for Cure will be alerted to take it down manually.' : '';
+  if(!confirm('Withdraw "'+sub.piece.name+'" from your submission?'+warning)) return;
+  const now=nowStr();
+  const newLog=[...(sub.auditLog||[]),{ts:now,by:'Artist',note:'Withdrawn by artist'+(wasLive?' — Shopify product needs manual removal':'')}];
+  try{
+    await updateDoc(doc(db,'submissions',id),{status:'withdrawn',auditLog:newLog});
+    await sendWithdrawalAlert(sub, wasLive);
+    const updated={...sub,status:'withdrawn',auditLog:newLog};
+    window._artistSubs=(window._artistSubs||[]).map(s=>s.id===id?updated:s);
+    renderArtistDetails(window._artistSubs);
+  }catch(err){alert('Error withdrawing: '+err.message);}
+};
+
+async function sendWithdrawalAlert(sub, wasLive){
+  const s=_emailSettings;
+  if(!s||!s.enabled||!s.publicKey||s.publicKey==='YOUR_EMAILJS_PUBLIC_KEY') return;
+  try{
+    emailjs.init(s.publicKey);
+    const recipients=(s.recipients||'').split(',').map(e=>e.trim()).filter(Boolean);
+    if(!recipients.length) return;
+    for(const to of recipients){
+      await emailjs.send(s.serviceId, s.templateId, {
+        to_email: to,
+        artist_name: sub.artist.name,
+        piece_name: sub.piece.name+(wasLive?' — WITHDRAWN (currently LIVE on Shopify, please set to Draft)':' — WITHDRAWN'),
+        category: 'Withdrawal',
+        artist_email: sub.artist.email,
+        submitted_at: nowStr(),
+        portal_url: window.location.href,
+      });
+    }
+  }catch(e){ console.warn('Withdrawal alert email failed:',e); }
+}
 function renderEditForm(sub){
   const el=document.getElementById('artist-details');
   const p=sub.piece, isOneOff=p.edition==='One Off', cat3D=is3D(sub.category), cat2D=is2D(sub.category);
