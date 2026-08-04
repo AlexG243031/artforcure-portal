@@ -2334,7 +2334,9 @@ async function loadEvents() {
 '<div style="font-size:12px;color:var(--gray-text)">Slot types: ' + (ev.slotDefs || []).map(esc).join(', ') + '</div>' +
       '<div style="font-size:12px;color:var(--gray-text)">Total bookable slots generated: ' + ((ev.bookableSlots || []).length) + '</div>' +
       '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\')">Edit Details</button> ' +
-      '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button>' +
+      '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button> ' +
+      '<button class="btn btn-sm btn-secondary" onclick="showExtendForm(\'' + ev.id + '\')">Extend Event</button>' +
+      '<div id="extend-form-' + ev.id + '"></div>' +
       '<div id="add-day-form-' + ev.id + '"></div>' +
       '</div>'
     ).join('');
@@ -2381,6 +2383,53 @@ window.addExtraDay = async function(eventId) {
     const newSlots = (eventDoc.slotDefs || []).map(name => ({ date: dateInput, slotName: name, capacity: null, booked: [] }));
     await updateDoc(doc(db, 'events', eventId), { bookableSlots: [...existing, ...newSlots] });
     status.innerHTML = '<span style="color:var(--success)">Day added.</span>';
+    loadEvents();
+  } catch (e) {
+    status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+window.showExtendForm = function(eventId) {
+  const c = document.getElementById('extend-form-' + eventId);
+  c.innerHTML = '<div style="margin-top:10px;padding:10px;background:var(--pink-light);border-radius:6px">' +
+    '<label style="font-size:11px;color:var(--gray-text)">New end date</label>' +
+    '<input type="date" id="extend-end-' + eventId + '" style="width:100%;padding:8px;margin:6px 0;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box">' +
+    '<label style="font-size:11px;color:var(--gray-text)">Days of the week to include in the extension</label>' +
+    '<div style="display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap">' +
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i) =>
+      '<label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" checked class="extend-day-' + eventId + '" value="' + i + '">' + d + '</label>'
+    ).join('') +
+    '</div>' +
+    '<button class="btn btn-sm" onclick="extendEvent(\'' + eventId + '\')">Extend</button>' +
+    '<div id="extend-status-' + eventId + '"></div></div>';
+}
+window.extendEvent = async function(eventId) {
+  const newEndInput = document.getElementById('extend-end-' + eventId).value;
+  const status = document.getElementById('extend-status-' + eventId);
+  const includedDays = Array.from(document.querySelectorAll('.extend-day-' + eventId + ':checked')).map(cb => parseInt(cb.value));
+  if (!newEndInput) { status.innerHTML = '<span style="color:var(--danger)">Pick a new end date.</span>'; return; }
+  if (!includedDays.length) { status.innerHTML = '<span style="color:var(--danger)">Include at least one day of the week.</span>'; return; }
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), where('__name__', '==', eventId)));
+    let eventDoc;
+    snap.forEach(d => eventDoc = { id: d.id, ...d.data() });
+    const existing = eventDoc.bookableSlots || [];
+    const existingDates = new Set(existing.map(s => s.date));
+    let d = new Date(eventDoc.endDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    const newEnd = new Date(newEndInput + 'T00:00:00');
+    if (newEnd < d) { status.innerHTML = '<span style="color:var(--danger)">New end date must be after the current end date.</span>'; return; }
+    const newSlots = [];
+    while (d <= newEnd) {
+      const dateStr = d.toISOString().slice(0, 10);
+      if (includedDays.includes(d.getDay()) && !existingDates.has(dateStr)) {
+        (eventDoc.slotDefs || []).forEach(name => {
+          newSlots.push({ date: dateStr, slotName: name, capacity: null, booked: [] });
+        });
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    await updateDoc(doc(db, 'events', eventId), { endDate: newEndInput, bookableSlots: [...existing, ...newSlots] });
+    status.innerHTML = '<span style="color:var(--success)">Event extended — ' + newSlots.length + ' new slots added.</span>';
     loadEvents();
   } catch (e) {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
