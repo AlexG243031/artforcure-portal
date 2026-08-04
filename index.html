@@ -2333,7 +2333,7 @@ async function loadEvents() {
       '<div style="font-size:13px;margin-bottom:6px">' + esc(ev.instructions || '') + '</div>' +
 '<div style="font-size:12px;color:var(--gray-text)">Slot types: ' + (ev.slotDefs || []).map(esc).join(', ') + '</div>' +
       '<div style="font-size:12px;color:var(--gray-text)">Total bookable slots generated: ' + ((ev.bookableSlots || []).length) + '</div>' +
-      '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\', \'' + esc(ev.title||'').replace(/'/g,"\\'") + '\', \'' + esc(ev.location||'').replace(/'/g,"\\'") + '\', \'' + esc(ev.instructions||'').replace(/'/g,"\\'") + '\')">Edit Details</button> ' +
+      '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\')">Edit Details</button> ' +
       '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button>' +
       '<div id="add-day-form-' + ev.id + '"></div>' +
       '</div>' +
@@ -2342,12 +2342,16 @@ async function loadEvents() {
       document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
   }
 }
-window.editEventDetails = function(id, title, location, instructions) {
-  const newTitle = prompt('Title:', title);
+window.editEventDetails = async function(id) {
+  const snap = await getDocs(query(collection(db, 'events'), where('__name__', '==', id)));
+  let ev;
+  snap.forEach(d => ev = d.data());
+  if (!ev) { alert('Event not found.'); return; }
+  const newTitle = prompt('Title:', ev.title || '');
   if (newTitle === null) return;
-  const newLocation = prompt('Location:', location);
+  const newLocation = prompt('Location:', ev.location || '');
   if (newLocation === null) return;
-  const newInstructions = prompt('Instructions:', instructions);
+  const newInstructions = prompt('Instructions:', ev.instructions || '');
   if (newInstructions === null) return;
   updateDoc(doc(db, 'events', id), { title: newTitle, location: newLocation, instructions: newInstructions })
     .then(() => loadEvents())
