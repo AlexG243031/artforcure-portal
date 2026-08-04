@@ -239,6 +239,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div class="nav-tabs">
       <button class="nav-tab active" id="tab-submit" onclick="showTab('submit')">Submit Work</button>
       <button class="nav-tab" id="tab-artist" onclick="showTab('artist')">My Submission</button>
+      <button class="nav-tab" id="tab-sales" onclick="showTab('sales')">My Sales</button>
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
@@ -255,6 +256,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
   <div class="main">
     <div id="view-submit"></div>
     <div id="view-artist" style="display:none;"></div>
+    <div id="view-sales" style="display:none;"></div>
     <div id="view-admin" style="display:none;"></div>
     <div id="view-settings" style="display:none;"></div>
     <div id="view-orders" style="display:none;"></div>
@@ -345,7 +347,7 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
+  ['submit','artist','sales','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -756,41 +758,56 @@ window.lookupArtist = async function(){
     if(snap.empty){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submission found for that email address.</div>';document.getElementById('artist-details').innerHTML='';return;}
     res.innerHTML='';
     const subs=[]; snap.forEach(d=>subs.push({id:d.id,...d.data()}));
-    renderArtistDetails(subs);
-    loadArtistSales(email);
+   renderArtistDetails(subs);
   }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
 };
 
-async function loadArtistSales(email){
+function renderSalesPortal(){
+  document.getElementById('view-sales').innerHTML=`
+    <div class="page-title">My Sales</div>
+    <div class="page-sub">Enter the email address you submitted with to view your sales.</div>
+    <div class="card">
+      <div class="lookup-row">
+        <input id="sales-lookup-email" type="email" placeholder="Your email address" onkeydown="if(event.key==='Enter')lookupSales()"/>
+        <button class="btn btn-primary" onclick="lookupSales()">Look Up</button>
+      </div>
+      <div id="sales-lookup-result"></div>
+    </div>
+    <div id="sales-details"></div>`;
+}
+
+window.lookupSales = async function(){
+  const email=document.getElementById('sales-lookup-email').value.trim().toLowerCase();
+  if(!email)return;
+  const res=document.getElementById('sales-lookup-result');
+  res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
     const snap = await getDocs(query(collection(db,'sale_notifications'), where('artistEmail','==',email)));
     const sales = []; snap.forEach(d=>sales.push({id:d.id, ...d.data()}));
-    if(!sales.length) return;
-    const el = document.createElement('div');
-    el.innerHTML = '<div class="page-title" style="margin-top:2rem">Your Sales</div>' +
-      sales.map(s => `<div class="card" style="border-left:4px solid ${s.fulfilled?'#2a7a50':'#D30180'}">
-        <div class="sub-header">
-          <div><div class="sub-artist">${esc(s.pieceName||'')}</div><div class="sub-piece">Sold to ${esc(s.buyerName||'')}</div></div>
-          <span class="badge ${s.fulfilled?'badge-approved':'badge-pending'}">${s.fulfilled?'Fulfilled':'Awaiting Fulfillment'}</span>
-        </div>
-        <div class="detail-grid">
-          <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(s.salePrice)}</div></div>
-        </div>
-        ${!s.fulfilled?`<div style="margin-top:1rem"><button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button></div>`:''}
-      </div>`).join('');
-    document.getElementById('artist-details').appendChild(el);
-  }catch(e){ console.warn('Could not load sales:', e); }
-}
+    res.innerHTML='';
+    if(!sales.length){ document.getElementById('sales-details').innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No sales found for that email address.</div>'; return; }
+    document.getElementById('sales-details').innerHTML = sales.map(s => `<div class="card" style="border-left:4px solid ${s.fulfilled?'#2a7a50':'#D30180'}">
+      <div class="sub-header">
+        <div><div class="sub-artist">${esc(s.pieceName||'')}</div><div class="sub-piece">Sold to ${esc(s.buyerName||'')}</div></div>
+        <span class="badge ${s.fulfilled?'badge-approved':'badge-pending'}">${s.fulfilled?'Fulfilled':'Awaiting Fulfillment'}</span>
+      </div>
+      <div class="detail-grid">
+        <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(s.salePrice)}</div></div>
+      </div>
+      ${!s.fulfilled?`<div style="margin-top:1rem"><button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button></div>`:''}
+    </div>`).join('');
+  }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
+};
 
 window.markFulfilled = async function(saleId){
   if(!confirm('Confirm this item has been delivered to the buyer?')) return;
   try{
     await updateDoc(doc(db,'sale_notifications',saleId), { fulfilled: true, fulfilledAt: nowStr() });
-    const email = document.getElementById('lookup-email').value.trim().toLowerCase();
-    document.getElementById('artist-details').innerHTML='';
-    lookupArtist();
+    lookupSales();
   }catch(e){ alert('Error: '+e.message); }
 };
+
+
 function renderArtistDetails(subs){
   const el=document.getElementById('artist-details');
   el.innerHTML=subs.map(sub=>{
@@ -1729,6 +1746,7 @@ onAuthStateChanged(auth, async (user) => {
     // Boot app
     try { renderSubmit(); } catch(e) { console.error(e); }
     try { renderArtistPortal(); } catch(e) { console.error(e); }
+    try { renderSalesPortal(); } catch(e) { console.error(e); }
     loadEmailSettings().catch(e => console.warn('Settings load error:', e));
 
     // If artist (not admin), go straight to submit tab
