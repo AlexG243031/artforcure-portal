@@ -162,7 +162,10 @@ function showEventDetail(user, event) {
   html += `<div class="card"><h2>${esc(event.title)}</h2><p>${esc(event.location||'')}</p><p style="margin-top:8px">${esc(event.instructions||'')}</p></div>`;
   html += '<div class="card"><h2>Pick your day(s) and slot(s)</h2>';
   Object.keys(byDate).sort().forEach(date => {
-    html += `<div class="day-group"><h4>${esc(date)}</h4>`;
+    const dObj = new Date(date + 'T00:00:00');
+    const dayName = dObj.toLocaleDateString('en-GB', { weekday: 'long' });
+    const niceDate = dObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    html += `<div class="day-group"><h4>${esc(dayName)}, ${esc(niceDate)}</h4>`;
     byDate[date].forEach(s => {
       const bookedCount = (s.booked || []).length;
       const isFull = s.capacity && bookedCount >= s.capacity;
