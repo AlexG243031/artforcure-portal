@@ -158,9 +158,13 @@ function showEventDetail(user, event) {
     if (!byDate[s.date]) byDate[s.date] = [];
     byDate[s.date].push({ ...s, index: i });
   });
+  const selected = new Set();
+  (event.bookableSlots || []).forEach((s, i) => { if ((s.booked || []).includes(user.uid)) selected.add(i); });
+
   let html = '<a class="top-link" href="#" id="back-link">&larr; Back to events</a>';
   html += `<div class="card"><h2>${esc(event.title)}</h2><p>${esc(event.location||'')}</p><p style="margin-top:8px">${esc(event.instructions||'')}</p></div>`;
   html += '<div class="card"><h2>Pick your day(s) and slot(s)</h2>';
+  html += '<p style="font-size:13px;color:var(--gray-text);margin-bottom:14px">Click a slot to select it — click it again to deselect. When you are happy with your choices, click "Save My Slots" below. You can come back and change your selections at any time before the event.</p>';
   Object.keys(byDate).sort().forEach(date => {
     const dObj = new Date(date + 'T00:00:00');
     const dayName = dObj.toLocaleDateString('en-GB', { weekday: 'long' });
@@ -168,38 +172,42 @@ function showEventDetail(user, event) {
     html += `<div class="day-group"><h4>${esc(dayName)}, ${esc(niceDate)}</h4>`;
     byDate[date].forEach(s => {
       const bookedCount = (s.booked || []).length;
-      const isFull = s.capacity && bookedCount >= s.capacity;
-      const isMine = (s.booked || []).includes(user.uid);
-      const cls = isFull && !isMine ? 'slot-btn full' : (isMine ? 'slot-btn selected' : 'slot-btn');
-      html += `<span class="${cls}" data-index="${s.index}" data-full="${isFull && !isMine}">${esc(s.slotName)}${isFull ? ' (Full)' : ''}</span>`;
+      const isMine = selected.has(s.index);
+      const isFull = s.capacity && bookedCount >= s.capacity && !isMine;
+      const cls = isFull ? 'slot-btn full' : (isMine ? 'slot-btn selected' : 'slot-btn');
+      html += `<span class="${cls}" data-index="${s.index}" data-full="${isFull}">${esc(s.slotName)}${isFull ? ' (Full)' : ''}</span>`;
     });
     html += '</div>';
   });
+  html += '<button class="btn" id="save-slots-btn">Save My Slots</button>';
   html += '<div id="booking-msg"></div></div>';
   app_el.innerHTML = html;
   document.getElementById('back-link').onclick = (e) => { e.preventDefault(); showEventList(user); };
   document.querySelectorAll('.slot-btn').forEach(el => {
     if (el.dataset.full === 'true') return;
-    el.onclick = () => toggleSlot(user, event, parseInt(el.dataset.index), el);
+    el.onclick = () => {
+      const idx = parseInt(el.dataset.index);
+      if (selected.has(idx)) selected.delete(idx); else selected.add(idx);
+      el.classList.toggle('selected');
+    };
   });
+  document.getElementById('save-slots-btn').onclick = () => saveSelections(user, event, selected);
 }
 
-async function toggleSlot(user, event, index, el) {
+async function saveSelections(user, event, selected) {
   const msg = document.getElementById('booking-msg');
   const slots = event.bookableSlots;
-  const slot = slots[index];
-  const already = (slot.booked || []).includes(user.uid);
-  if (already) {
-    slot.booked = slot.booked.filter(uid => uid !== user.uid);
-  } else {
-    slot.booked = [...(slot.booked || []), user.uid];
-  }
+  slots.forEach((s, i) => {
+    const already = (s.booked || []).includes(user.uid);
+    const wants = selected.has(i);
+    if (wants && !already) s.booked = [...(s.booked || []), user.uid];
+    if (!wants && already) s.booked = (s.booked || []).filter(uid => uid !== user.uid);
+  });
   msg.textContent = 'Saving...';
   try {
     await updateDoc(doc(db, 'events', event.id), { bookableSlots: slots });
-    el.classList.toggle('selected');
     msg.className = 'msg success';
-    msg.textContent = 'Saved.';
+    msg.textContent = 'Your slots have been saved. Thank you!';
   } catch (e) {
     msg.className = 'msg error';
     msg.textContent = 'Error saving: ' + e.message;
