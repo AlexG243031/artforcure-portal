@@ -309,12 +309,13 @@ let _emailSettings = null;
 async function loadEmailSettings() {
   try {
     const timeout = new Promise((_,rej) => setTimeout(()=>rej(new Error('Settings timeout')), 5000));
-    const fetcher = getDocs(collection(db, 'settings'));
+    const fetcher = getDoc(doc(db, 'settings', 'email'));
     const snap = await Promise.race([fetcher, timeout]);
-    snap.forEach(d => {
-      if(d.id === 'email') _emailSettings = d.data();
-      if(d.id === 'integrations') window._currentIntegrations = d.data();
-    });
+    if(snap.exists()) _emailSettings = snap.data();
+    if(_isAdmin){
+      const intgSnap = await getDoc(doc(db,'settings','integrations'));
+      if(intgSnap.exists()) window._currentIntegrations = intgSnap.data();
+    }
   } catch(e) { console.warn('Could not load settings (non-fatal):', e); }
 }
 
