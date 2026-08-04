@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Volunteer Login — Art for Cure</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{--pink:#D30180;--pink-light:#fce8f0;--gray-bg:#faf8f9;--gray-border:#e6dfe3;--gray-text:#6e5c64;--dark:#251a1f;--success:#2a7a50;--success-bg:#e6f5ee;--danger:#b83030;--danger-bg:#fdecea}
+  body{font-family:Georgia,serif;background:var(--gray-bg);color:var(--dark);min-height:100vh}
+  header{text-align:center;padding:28px 20px;background:#fff;border-bottom:1px solid var(--gray-border)}
+  header img{max-width:160px}
+  main{max-width:560px;margin:40px auto;padding:0 20px}
+  .card{background:#fff;border:1px solid var(--gray-border);border-radius:10px;padding:30px;margin-bottom:20px}
+  h2{font-weight:normal;margin-bottom:16px}
+  label{display:block;font-size:12px;text-transform:uppercase;color:var(--gray-text);margin-bottom:4px;margin-top:14px}
+  input{width:100%;padding:10px;border:1px solid var(--gray-border);border-radius:6px;font-family:inherit;font-size:14px}
+  button.btn{margin-top:20px;width:100%;padding:12px;background:var(--pink);color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;font-size:14px}
+  button.btn:hover{opacity:0.9}
+  button.btn-secondary{background:#fff;color:var(--pink);border:1px solid var(--pink)}
+  .msg{margin-top:14px;padding:10px;border-radius:6px;font-size:13px}
+  .msg.error{background:var(--danger-bg);color:var(--danger)}
+  .msg.success{background:var(--success-bg);color:var(--success)}
+  .event-item{padding:14px;border:1px solid var(--gray-border);border-radius:8px;margin-bottom:10px;cursor:pointer}
+  .event-item:hover{background:var(--pink-light)}
+  .event-item h3{font-size:16px;margin-bottom:4px}
+  .event-item p{font-size:13px;color:var(--gray-text)}
+  .day-group{margin-bottom:18px}
+  .day-group h4{font-size:14px;margin-bottom:8px}
+  .slot-btn{display:inline-block;padding:8px 14px;border:1px solid var(--gray-border);border-radius:6px;margin:0 8px 8px 0;cursor:pointer;font-size:13px;background:#fff}
+  .slot-btn.selected{background:var(--pink);color:#fff;border-color:var(--pink)}
+  .slot-btn.full{background:#eee;color:#999;cursor:not-allowed;text-decoration:line-through}
+  .top-link{display:inline-block;margin-bottom:16px;color:var(--pink);text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+<header><img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure"></header>
+<main>
+  <div id="app"></div>
+</main>
+
+<script type="module">
+import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, verifyPasswordResetCode, confirmPasswordReset } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw55o",
+  authDomain: "art-for-cure.firebaseapp.com",
+  projectId: "art-for-cure",
+  storageBucket: "art-for-cure.firebasestorage.app",
+  messagingSenderId: "11223551235",
+  appId: "1:11223551235:web:2a4472a2e56530844ced36"
+};
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const app_el = document.getElementById('app');
+function esc(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+const params = new URLSearchParams(window.location.search);
+const oobCode = params.get('oobCode');
+const mode = params.get('mode');
+
+if (mode === 'resetPassword' && oobCode) {
+  showSetPasswordForm();
+} else {
+  onAuthStateChanged(auth, user => {
+    if (user) showEventList(user);
+    else showLoginForm();
+  });
+}
+
+function showSetPasswordForm() {
+  app_el.innerHTML = `
+    <div class="card">
+      <h2>Set your password</h2>
+      <div id="verify-msg" class="msg">Checking your link...</div>
+      <div id="set-pw-form" style="display:none">
+        <label>New Password</label>
+        <input type="password" id="new-password" placeholder="At least 6 characters">
+        <button class="btn" id="set-pw-btn">Set Password &amp; Continue</button>
+      </div>
+    </div>
+  `;
+  verifyPasswordResetCode(auth, oobCode).then(email => {
+    document.getElementById('verify-msg').style.display = 'none';
+    document.getElementById('set-pw-form').style.display = 'block';
+    document.getElementById('set-pw-btn').onclick = async () => {
+      const pw = document.getElementById('new-password').value;
+      if (pw.length < 6) { alert('Password must be at least 6 characters.'); return; }
+      try {
+        await confirmPasswordReset(auth, oobCode, pw);
+        await signInWithEmailAndPassword(auth, email, pw);
+        window.location.href = 'login.html';
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+  }).catch(e => {
+    document.getElementById('verify-msg').textContent = 'This link has expired or already been used. Please ask us to resend it.';
+    document.getElementById('verify-msg').className = 'msg error';
+  });
+}
+
+function showLoginForm() {
+  app_el.innerHTML = `
+    <div class="card">
+      <h2>Volunteer Login</h2>
+      <label>Email</label>
+      <input type="email" id="login-email">
+      <label>Password</label>
+      <input type="password" id="login-password">
+      <button class="btn" id="login-btn">Log In</button>
+      <div id="login-msg"></div>
+    </div>
+  `;
+  document.getElementById('login-btn').onclick = async () => {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const msg = document.getElementById('login-msg');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      msg.className = 'msg error';
+      msg.textContent = 'Login failed: ' + e.message;
+    }
+  };
+}
+
+async function showEventList(user) {
+  app_el.innerHTML = '<div class="card">Loading events...</div>';
+  const today = new Date().toISOString().slice(0,10);
+  const snap = await getDocs(query(collection(db, 'events'), where('endDate', '>=', today)));
+  const events = [];
+  snap.forEach(d => events.push({ id: d.id, ...d.data() }));
+  let html = `<a class="top-link" href="#" id="logout-link">Sign out (${esc(user.email)})</a>`;
+  if (!events.length) {
+    html += '<div class="card"><p>There are no upcoming events at the moment. Please check back soon.</p></div>';
+  } else {
+    html += '<div class="card"><h2>Upcoming Events</h2>';
+    events.forEach(ev => {
+      html += `<div class="event-item" data-id="${ev.id}"><h3>${esc(ev.title)}</h3><p>${esc(ev.location||'')} | ${esc(ev.startDate)} to ${esc(ev.endDate)}</p></div>`;
+    });
+    html += '</div>';
+  }
+  app_el.innerHTML = html;
+  document.getElementById('logout-link').onclick = (e) => { e.preventDefault(); signOut(auth); };
+  document.querySelectorAll('.event-item').forEach(el => {
+    el.onclick = () => showEventDetail(user, events.find(ev => ev.id === el.dataset.id));
+  });
+}
+
+function showEventDetail(user, event) {
+  const byDate = {};
+  (event.bookableSlots || []).forEach((s, i) => {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push({ ...s, index: i });
+  });
+  let html = '<a class="top-link" href="#" id="back-link">&larr; Back to events</a>';
+  html += `<div class="card"><h2>${esc(event.title)}</h2><p>${esc(event.location||'')}</p><p style="margin-top:8px">${esc(event.instructions||'')}</p></div>`;
+  html += '<div class="card"><h2>Pick your day(s) and slot(s)</h2>';
+  Object.keys(byDate).sort().forEach(date => {
+    html += `<div class="day-group"><h4>${esc(date)}</h4>`;
+    byDate[date].forEach(s => {
+      const bookedCount = (s.booked || []).length;
+      const isFull = s.capacity && bookedCount >= s.capacity;
+      const isMine = (s.booked || []).includes(user.uid);
+      const cls = isFull && !isMine ? 'slot-btn full' : (isMine ? 'slot-btn selected' : 'slot-btn');
+      html += `<span class="${cls}" data-index="${s.index}" data-full="${isFull && !isMine}">${esc(s.slotName)}${isFull ? ' (Full)' : ''}</span>`;
+    });
+    html += '</div>';
+  });
+  html += '<div id="booking-msg"></div></div>';
+  app_el.innerHTML = html;
+  document.getElementById('back-link').onclick = (e) => { e.preventDefault(); showEventList(user); };
+  document.querySelectorAll('.slot-btn').forEach(el => {
+    if (el.dataset.full === 'true') return;
+    el.onclick = () => toggleSlot(user, event, parseInt(el.dataset.index), el);
+  });
+}
+
+async function toggleSlot(user, event, index, el) {
+  const msg = document.getElementById('booking-msg');
+  const slots = event.bookableSlots;
+  const slot = slots[index];
+  const already = (slot.booked || []).includes(user.uid);
+  if (already) {
+    slot.booked = slot.booked.filter(uid => uid !== user.uid);
+  } else {
+    slot.booked = [...(slot.booked || []), user.uid];
+  }
+  msg.textContent = 'Saving...';
+  try {
+    await updateDoc(doc(db, 'events', event.id), { bookableSlots: slots });
+    el.classList.toggle('selected');
+    msg.className = 'msg success';
+    msg.textContent = 'Saved.';
+  } catch (e) {
+    msg.className = 'msg error';
+    msg.textContent = 'Error saving: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>

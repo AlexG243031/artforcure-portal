@@ -86,6 +86,14 @@ exports.onBulkEmailCreated = onDocumentCreated(
     const snap = event.data;
     const job = snap.data();
  const { subject, message, recipients, createLogins } = job;
+    async function getOrCreateLoginLink(email) {
+      try {
+        await admin.auth().getUserByEmail(email);
+      } catch (e) {
+        await admin.auth().createUser({ email });
+      }
+      return admin.auth().generatePasswordResetLink(email, { url: 'https://submit.artforcure.org.uk/login.html' });
+    }
     async function ensureLoginAndSendReset(email) {
       try {
         await admin.auth().getUserByEmail(email);
