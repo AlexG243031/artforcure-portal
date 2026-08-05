@@ -895,7 +895,7 @@ async function finalizeFulfillment(sale){
   };
   await addDoc(collection(db,'invoices'), invoice);
   await sendInvoiceEmail(invoice);
-  lookupSales();
+  lookupSales(sale.artistEmail);
 }
 
 async function sendInvoiceEmail(invoice){
