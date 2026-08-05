@@ -244,10 +244,9 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-invoices" onclick="showTab('invoices')">My Invoices</button>
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
-      <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
-      <button class="nav-tab" id="tab-events" style="display:none;" onclick="showTab('events')">📅 Events</button>
-      <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
+      <button class="nav-tab" id="tab-behalf" style="display:none;" onclick="showTab('behalf')">🎨 On Behalf of Artist</button>
+      <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
     </div>
     <div class="user-chip">
       <div class="user-chip-dot"></div>
@@ -263,9 +262,8 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-admin" style="display:none;"></div>
     <div id="view-settings" style="display:none;"></div>
     <div id="view-orders" style="display:none;"></div>
-    <div id="view-archive" style="display:none;"></div>
     <div id="view-volunteers" style="display:none;"></div>
-      <div id="view-events" style="display:none;"></div>
+    <div id="view-behalf" style="display:none;"></div>
     </div>
 </div>
 
@@ -351,18 +349,28 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','sales','invoices','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
+  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
   if(tab==='admin') loadAdmin();
   if(tab==='orders') loadOrders();
-  if(tab==='archive') loadArchive();
-  if(tab==='settings') loadSettings();
-  if(tab==='volunteers') loadVolunteers();
-  if(tab==='events') loadEvents();
+  if(tab==='settings') renderSettingsHub();
+  if(tab==='volunteers') renderVolunteersHub();
   if(tab==='invoices') renderInvoicesPortal(_currentUser?.email);
+  if(tab==='behalf') renderBehalfHub();
 };
+
+function renderBehalfHub(){
+  document.getElementById('view-behalf').innerHTML = `
+    <div class="page-title">On Behalf of Artist</div>
+    <div class="page-sub">For artists who can't access a computer — submit new work, or check their submissions and sales, on their behalf.</div>
+    <div class="filter-bar">
+      <button class="btn btn-primary btn-sm" onclick="showTab('submit')">Submit Work for Artist</button>
+      <button class="btn btn-secondary btn-sm" onclick="showTab('artist')">Submissions Made by Artist</button>
+      <button class="btn btn-secondary btn-sm" onclick="showTab('sales')">Sales for Artist</button>
+    </div>`;
+}
 
 // ── Image helpers ──
 window.handleImageFiles = function(files) {
@@ -472,6 +480,7 @@ function renderSubmit(state){
   const isOneOff=piece.edition==='One Off', words=wc(artist.bio);
 
   let html=`
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
     <div class="page-title">Submit Your Artwork</div>
     <div class="page-sub">Share your work with Art for Cure — we review every submission personally.</div>
     <div class="steps">
@@ -763,6 +772,7 @@ function renderArtistPortal(prefillEmail){
       <div id="lookup-result"></div>
     </div>` : `<div id="lookup-result"></div>`;
   document.getElementById('view-artist').innerHTML=`
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
     <div class="page-title">My Submissions</div>
     <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their submission." : "Here's your current submission."}</div>
     ${lookupBlock}
@@ -792,6 +802,7 @@ function renderSalesPortal(prefillEmail){
       <div id="sales-lookup-result"></div>
     </div>` : `<div id="sales-lookup-result"></div>`;
   document.getElementById('view-sales').innerHTML=`
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
     <div class="page-title">My Sales</div>
     <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their sales." : "Here are your current sales."}</div>
     ${lookupBlock}
@@ -1406,8 +1417,26 @@ window.confirmShopify=async function(id){
 // ─────────────────────────────────────────
 // SETTINGS
 // ─────────────────────────────────────────
+function renderSettingsHub(){
+  document.getElementById('view-settings').innerHTML = `
+    <div class="filter-bar">
+      <button class="btn btn-sm btn-primary" id="set-subtab-settings" onclick="switchSettingsPanel('settings')">Settings</button>
+      <button class="btn btn-sm btn-secondary" id="set-subtab-archive" onclick="switchSettingsPanel('archive')">📁 Archive</button>
+    </div>
+    <div id="set-panel-settings"></div>
+    <div id="set-panel-archive" style="display:none;"></div>`;
+  loadSettings();
+}
+window.switchSettingsPanel = function(panel){
+  document.getElementById('set-panel-settings').style.display = panel==='settings'?'':'none';
+  document.getElementById('set-panel-archive').style.display = panel==='archive'?'':'none';
+  document.getElementById('set-subtab-settings').className = 'btn btn-sm '+(panel==='settings'?'btn-primary':'btn-secondary');
+  document.getElementById('set-subtab-archive').className = 'btn btn-sm '+(panel==='archive'?'btn-primary':'btn-secondary');
+  if(panel==='archive') loadArchive();
+};
+
 async function loadSettings() {
-  const v = document.getElementById('view-settings');
+  const v = document.getElementById('set-panel-settings');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading settings…</div>';
   try {
     const snap = await getDocs(collection(db, 'settings'));
@@ -1424,7 +1453,7 @@ async function loadSettings() {
 }
 
 function renderSettings(s, intg={}) {
-  const v = document.getElementById('view-settings');
+  const v = document.getElementById('set-panel-settings');
   const recipientList = (s.recipients||'').split(',').map(e=>e.trim()).filter(Boolean);
   v.innerHTML = `
     <div class="page-title">Settings</div>
@@ -2014,10 +2043,13 @@ onAuthStateChanged(auth, async (user) => {
     // Show/hide admin tabs
     document.getElementById('tab-admin').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-orders').style.display = _isAdmin ? '' : 'none';
-    document.getElementById('tab-archive').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
-   document.getElementById('tab-events').style.display = _isAdmin ? '' : 'none';
+    document.getElementById('tab-behalf').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-settings').style.display = _isAdmin ? '' : 'none';
+    // Artist-only tabs — hidden from admin, who instead uses "On Behalf of Artist"
+    document.getElementById('tab-submit').style.display = _isAdmin ? 'none' : '';
+    document.getElementById('tab-artist').style.display = _isAdmin ? 'none' : '';
+    document.getElementById('tab-sales').style.display = _isAdmin ? 'none' : '';
     
     // User chip
     const chipName = document.getElementById('user-chip-name');
@@ -2155,7 +2187,7 @@ window.archiveSubmission = async function(id) {
 };
 
 async function loadArchive() {
-  const v = document.getElementById('view-archive');
+  const v = document.getElementById('set-panel-archive');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading archive…</div>';
   try {
     const snap = await getDocs(query(collection(db,'submissions'), where('archived','==',true), orderBy('archivedAt','desc')));
@@ -2659,7 +2691,7 @@ const slotDefs = window._eventSlots.filter(s => s.name.trim());
   }
 }
 async function loadEvents() {
-  const v = document.getElementById('view-events');
+  const v = document.getElementById('vol-panel-events');
   v.innerHTML = '<div class="page-title">Events</div>' +
     '<div class="card" style="margin-bottom:16px">' +
     '<div style="font-weight:700;margin-bottom:10px">Create Event</div>' +
@@ -2799,8 +2831,26 @@ window.extendEvent = async function(eventId) {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
   }
 }
+function renderVolunteersHub(){
+  document.getElementById('view-volunteers').innerHTML = `
+    <div class="filter-bar">
+      <button class="btn btn-sm btn-primary" id="vol-subtab-volunteers" onclick="switchVolunteersPanel('volunteers')">Volunteers</button>
+      <button class="btn btn-sm btn-secondary" id="vol-subtab-events" onclick="switchVolunteersPanel('events')">📅 Events</button>
+    </div>
+    <div id="vol-panel-volunteers"></div>
+    <div id="vol-panel-events" style="display:none;"></div>`;
+  loadVolunteers();
+}
+window.switchVolunteersPanel = function(panel){
+  document.getElementById('vol-panel-volunteers').style.display = panel==='volunteers'?'':'none';
+  document.getElementById('vol-panel-events').style.display = panel==='events'?'':'none';
+  document.getElementById('vol-subtab-volunteers').className = 'btn btn-sm '+(panel==='volunteers'?'btn-primary':'btn-secondary');
+  document.getElementById('vol-subtab-events').className = 'btn btn-sm '+(panel==='events'?'btn-primary':'btn-secondary');
+  if(panel==='events') loadEvents();
+};
+
 async function loadVolunteers() {
-   const v = document.getElementById('view-volunteers');
+   const v = document.getElementById('vol-panel-volunteers');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading volunteers...</div>';
   try {
      const snap = await getDocs(query(collection(db, 'volunteers'), orderBy('registeredAt', 'desc')));
