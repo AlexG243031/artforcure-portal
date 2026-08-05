@@ -361,6 +361,7 @@ window.showTab = function(tab) {
   if(tab==='settings') loadSettings();
   if(tab==='volunteers') loadVolunteers();
   if(tab==='events') loadEvents();
+  if(tab==='invoices') renderInvoicesPortal(_currentUser?.email);
 };
 
 // ── Image helpers ──
