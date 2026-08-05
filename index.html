@@ -2225,6 +2225,84 @@ window.unarchiveSubmission = async function(id) {
 };
 
 // ─────────────────────────────────────────
+// ONE-OFF: import pre-existing manual Shopify listings.
+// Run manually from the browser console: runShopifyImport()
+// Not linked to any UI — safe to leave in place, does nothing unless called.
+// ─────────────────────────────────────────
+window.runShopifyImport = async function(){
+  const LOWER_COMMISSION = new Set(['caro burberry','carol peace','designs on metal','jeremy moulsdale','john cox','sophie cook']);
+  const intg = window._currentIntegrations || {};
+  if(!intg.shopifyStore || !intg.shopifyClientId || !intg.shopifyClientSecret){
+    console.error('Shopify credentials not loaded — make sure you are logged in as admin and have visited Settings once this session.');
+    return;
+  }
+  console.log('Starting Shopify import…');
+  const token = await getShopifyToken();
+  const worker = (intg.shopifyWorker||'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/,'');
+  const store = intg.shopifyStore;
+
+  const subsSnap = await getDocs(collection(db,'submissions'));
+  const linkedIds = new Set();
+  subsSnap.forEach(d=>{ const sid=d.data().shopifyId; if(sid) linkedIds.add(String(sid)); });
+
+  const artistsSnap = await getDocs(collection(db,'artists'));
+  const artistByName = {};
+  artistsSnap.forEach(d=>{ const a=d.data(); if(a.name) artistByName[a.name.trim().toLowerCase()] = a.email; });
+
+  const colRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/custom_collections.json?limit=250', {
+    headers:{'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+  });
+  if(!colRes.ok){ console.error('Could not load collections from Shopify.'); return; }
+  const collections = (await colRes.json()).custom_collections||[];
+
+  const unmatched = [];
+  let totalImported = 0;
+  const now = nowStr();
+
+  for(const col of collections){
+    const nameKey = col.title.trim().toLowerCase();
+    const email = artistByName[nameKey];
+    if(!email){ unmatched.push(col.title); continue; }
+
+    const prodRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/collections/'+col.id+'/products.json?limit=250', {
+      headers:{'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+    });
+    if(!prodRes.ok){ console.warn('Could not load products for', col.title); continue; }
+    const products = (await prodRes.json()).products||[];
+    const pending = products.filter(p=>!linkedIds.has(String(p.id)));
+    if(!pending.length){ console.log(col.title+': nothing to import (already linked or empty).'); continue; }
+
+    const comm = LOWER_COMMISSION.has(nameKey) ? 30 : 50;
+    console.log('Importing '+pending.length+' item(s) for '+col.title+' at '+comm+'% commission…');
+
+    for(const p of pending){
+      const price = (p.variants&&p.variants[0]) ? parseFloat(p.variants[0].price)||0 : 0;
+      const category = ['Painting','Photograph','Print','Sculpture','Ceramic'].includes(p.product_type) ? p.product_type : 'Painting';
+      const images = (p.images||[]).slice(0,4).map(img=>({url:img.src, path:''}));
+      try{
+        await addDoc(collection(db,'submissions'), {
+          artist:{ name:col.title, email, mobile:'', website:'', bio:'', photoUrl:'' },
+          category, piece:{ name:p.title, price, medium:'', dimensions:'', edition:'One Off', editionNum:'', numDelivered:'', numOrder:'', leadTime:'', weight:'', plinths:'', framed:'', frameDesc:'' },
+          status:'approved', commission:comm, submittedAt:now, shopifyId:String(p.id), images,
+          auditLog:[{ts:now, by:'Admin', note:'Imported from existing Shopify listing ('+col.title+')'}],
+          createdAt: serverTimestamp()
+        });
+        totalImported++;
+      }catch(e){ console.error('Failed to import', p.title, e); }
+    }
+  }
+
+  console.log('─────────────────────────────');
+  console.log('Import complete. Total items imported:', totalImported);
+  if(unmatched.length){
+    console.log('Collections with NO matching artist profile (skipped — handle manually):');
+    unmatched.forEach(n=>console.log('  - '+n));
+  } else {
+    console.log('All collections matched an existing artist profile.');
+  }
+};
+
+// ─────────────────────────────────────────
 // ORDERS (from Shopify via Worker)
 // ─────────────────────────────────────────
 async function loadOrders() {
