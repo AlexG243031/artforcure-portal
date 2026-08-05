@@ -241,6 +241,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab active" id="tab-submit" onclick="showTab('submit')">Submit Work</button>
       <button class="nav-tab" id="tab-artist" onclick="showTab('artist')">My Submissions</button>
       <button class="nav-tab" id="tab-sales" onclick="showTab('sales')">My Sales</button>
+      <button class="nav-tab" id="tab-invoices" onclick="showTab('invoices')">My Invoices</button>
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-archive" style="display:none;" onclick="showTab('archive')">Archive</button>
@@ -258,6 +259,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-submit"></div>
     <div id="view-artist" style="display:none;"></div>
     <div id="view-sales" style="display:none;"></div>
+    <div id="view-invoices" style="display:none;"></div>
     <div id="view-admin" style="display:none;"></div>
     <div id="view-settings" style="display:none;"></div>
     <div id="view-orders" style="display:none;"></div>
@@ -349,7 +351,7 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 window._pendingImages = [];
 
 window.showTab = function(tab) {
-  ['submit','artist','sales','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
+  ['submit','artist','sales','invoices','admin','orders','archive','settings','volunteers','events'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -822,8 +824,159 @@ window.lookupSales = async function(presetEmail){
 window.markFulfilled = async function(saleId){
   if(!confirm('Confirm this item has been delivered to the buyer?')) return;
   try{
-    await updateDoc(doc(db,'sale_notifications',saleId), { fulfilled: true, fulfilledAt: nowStr() });
-    lookupSales();
+    const saleSnap = await getDoc(doc(db,'sale_notifications',saleId));
+    if(!saleSnap.exists()){ alert('Sale record not found.'); return; }
+    const sale = { id: saleId, ...saleSnap.data() };
+    const profile = await lookupArtistProfile(sale.artistEmail);
+    if(!profile || !profile.bankDetails || !profile.bankDetails.accountNumber){
+      window._pendingFulfillSale = sale;
+      showBankDetailsModal();
+      return;
+    }
+    await finalizeFulfillment(sale);
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+window.showBankDetailsModal = function(){
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="bank-details-modal" onclick="if(event.target.id==='bank-details-modal')closeBankModal()">
+      <div class="modal">
+        <h2>Payment Details</h2>
+        <p>Before we can process your first payment, please provide your bank details. These are saved to your profile for future sales.</p>
+        <div class="field" style="margin-bottom:0.75rem"><label>Account Holder Name</label><input id="bd-name" placeholder="e.g. Jane Smith"/></div>
+        <div class="field" style="margin-bottom:0.75rem"><label>Sort Code</label><input id="bd-sort" placeholder="00-00-00"/></div>
+        <div class="field" style="margin-bottom:1rem"><label>Account Number</label><input id="bd-account" placeholder="12345678"/></div>
+        <div id="bank-modal-error"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeBankModal()">Cancel</button>
+          <button class="btn btn-primary" id="bank-save-btn" onclick="saveBankDetailsAndFulfill()">Save &amp; Continue</button>
+        </div>
+      </div>
+    </div>`);
+};
+window.closeBankModal = function(){ const m=document.getElementById('bank-details-modal'); if(m)m.remove(); window._pendingFulfillSale=null; };
+
+window.saveBankDetailsAndFulfill = async function(){
+  const name=((document.getElementById('bd-name')||{}).value||'').trim();
+  const sort=((document.getElementById('bd-sort')||{}).value||'').trim();
+  const account=((document.getElementById('bd-account')||{}).value||'').trim();
+  const errDiv=document.getElementById('bank-modal-error');
+  if(!name||!sort||!account){ errDiv.innerHTML='<div class="alert alert-warn" style="margin-top:0.5rem">Please fill in all fields.</div>'; return; }
+  const btn=document.getElementById('bank-save-btn');
+  btn.disabled=true; btn.textContent='Saving…';
+  const sale = window._pendingFulfillSale;
+  try{
+    const bankDetails={accountName:name, sortCode:sort, accountNumber:account};
+    const existing = await lookupArtistProfile(sale.artistEmail) || {name:sale.artistName, email:sale.artistEmail};
+    await saveArtistProfile({...existing, bankDetails});
+    closeBankModal();
+    await finalizeFulfillment(sale);
+  }catch(e){
+    errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:0.5rem">Error: '+e.message+'</div>';
+    btn.disabled=false; btn.textContent='Save & Continue';
+  }
+};
+
+async function finalizeFulfillment(sale){
+  const now=nowStr();
+  await updateDoc(doc(db,'sale_notifications',sale.id), { fulfilled:true, fulfilledAt: now });
+  let commPct=40;
+  if(sale.submissionId){
+    try{ const subSnap=await getDoc(doc(db,'submissions',sale.submissionId)); if(subSnap.exists()) commPct=parseFloat(subSnap.data().commission)||40; }catch(e){}
+  }
+  const price=parseFloat(sale.salePrice)||0;
+  const amountOwed = price*((100-commPct)/100);
+  const afcCommission = price-amountOwed;
+  const invoice = {
+    date: now, artistName: sale.artistName||'', artistEmail: sale.artistEmail||'',
+    pieceName: sale.pieceName||'', buyerName: sale.buyerName||'', price, commissionPct: commPct,
+    afcCommission, amountOwed, saleId: sale.id, submissionId: sale.submissionId||'',
+    status: 'unpaid', createdAt: serverTimestamp()
+  };
+  await addDoc(collection(db,'invoices'), invoice);
+  await sendInvoiceEmail(invoice);
+  lookupSales();
+}
+
+async function sendInvoiceEmail(invoice){
+  const s=_emailSettings;
+  if(!s||!s.enabled||!s.publicKey||s.publicKey==='YOUR_EMAILJS_PUBLIC_KEY') return;
+  try{
+    emailjs.init(s.publicKey);
+    const main=(s.recipients||'').split(',').map(e=>e.trim()).filter(Boolean);
+    const extra=(s.invoiceRecipients||'').split(',').map(e=>e.trim()).filter(Boolean);
+    const recipients=[...new Set([...main,...extra])];
+    if(!recipients.length) return;
+    for(const to of recipients){
+      await emailjs.send(s.serviceId, s.templateId, {
+        to_email: to,
+        artist_name: invoice.artistName,
+        piece_name: invoice.pieceName,
+        category: 'Invoice',
+        artist_email: invoice.artistEmail,
+        submitted_at: invoice.date,
+        portal_url: window.location.href,
+        invoice_date: invoice.date,
+        buyer_name: invoice.buyerName,
+        price: fmt(invoice.price),
+        afc_commission: fmt(invoice.afcCommission),
+        amount_owed: fmt(invoice.amountOwed),
+      });
+    }
+  }catch(e){ console.warn('Invoice email failed:',e); }
+}
+
+function renderInvoicesPortal(prefillEmail){
+  const lookupBlock = _isAdmin ? `<div class="card">
+      <div class="lookup-row">
+        <input id="invoices-lookup-email" type="email" placeholder="Artist's email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupInvoices()"/>
+        <button class="btn btn-primary" onclick="lookupInvoices()">Look Up</button>
+      </div>
+      <div id="invoices-lookup-result"></div>
+    </div>` : `<div id="invoices-lookup-result"></div>`;
+  document.getElementById('view-invoices').innerHTML=`
+    <div class="page-title">My Invoices</div>
+    <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their invoices." : "A record of invoices generated whenever one of your sales is marked as fulfilled."}</div>
+    ${lookupBlock}
+    <div id="invoices-details"></div>`;
+  if(prefillEmail) lookupInvoices(prefillEmail);
+}
+
+window.lookupInvoices = async function(presetEmail){
+  const email=(presetEmail || document.getElementById('invoices-lookup-email').value.trim()).toLowerCase();
+  if(!email) return;
+  const res=document.getElementById('invoices-lookup-result');
+  res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
+  try{
+    const snap=await getDocs(query(collection(db,'invoices'), where('artistEmail','==',email), orderBy('createdAt','desc')));
+    const invs=[]; snap.forEach(d=>invs.push({id:d.id,...d.data()}));
+    res.innerHTML='';
+    if(!invs.length){ document.getElementById('invoices-details').innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No invoices found yet.</div>'; return; }
+    document.getElementById('invoices-details').innerHTML = invs.map(inv=>{
+      const isPaid = inv.status==='paid';
+      return `<div class="card" style="border-left:4px solid ${isPaid?'#2a7a50':'#D30180'}">
+        <div class="sub-header">
+          <div><div class="sub-artist">${esc(inv.pieceName||'')}</div><div class="sub-piece">Sold to ${esc(inv.buyerName||'')} &middot; ${esc(inv.date||'')}</div></div>
+          <span class="badge ${isPaid?'badge-approved':'badge-pending'}">${isPaid?'Paid':'Awaiting Payment'}</span>
+        </div>
+        <div class="detail-grid">
+          <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700">${fmt(inv.price)}</div></div>
+          <div><div class="detail-label">AFC Commission (${inv.commissionPct||''}%)</div><div class="detail-value">${fmt(inv.afcCommission)}</div></div>
+          <div><div class="detail-label">Amount Owed to You</div><div class="detail-value" style="font-weight:700;color:var(--success)">${fmt(inv.amountOwed)}</div></div>
+          ${isPaid&&inv.paidAt?`<div><div class="detail-label">Paid</div><div class="detail-value">${esc(inv.paidAt)}</div></div>`:''}
+        </div>
+        ${_isAdmin&&!isPaid?`<div style="margin-top:1rem"><button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button></div>`:''}
+      </div>`;
+    }).join('');
+  }catch(err){ res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`; }
+};
+
+window.markInvoicePaid = async function(invoiceId){
+  if(!confirm('Confirm payment has been made to the artist for this invoice?')) return;
+  try{
+    await updateDoc(doc(db,'invoices',invoiceId), { status:'paid', paidAt: nowStr() });
+    const email = (document.getElementById('invoices-lookup-email')||{}).value;
+    lookupInvoices(email);
   }catch(e){ alert('Error: '+e.message); }
 };
 
@@ -1268,6 +1421,17 @@ function renderSettings(s, intg={}) {
         </div>
 
         <div class="divider"></div>
+        <div class="settings-label" style="margin-bottom:6px">Additional Invoice Recipients</div>
+        <div class="settings-hint" style="margin-bottom:12px">These addresses also receive invoice emails when a sale is marked fulfilled, on top of the recipients above.</div>
+        <div id="invoice-recipient-tags">
+          ${(s.invoiceRecipients||'').split(',').map(e=>e.trim()).filter(Boolean).map(e=>`<span class="email-tag">${esc(e)}<button onclick="removeInvoiceRecipient('${esc(e)}')" title="Remove">×</button></span>`).join('')}
+        </div>
+        <div class="add-email-row">
+          <input id="new-invoice-recipient" type="email" placeholder="Add email address…" onkeydown="if(event.key==='Enter'){event.preventDefault();addInvoiceRecipient();}"/>
+          <button class="btn btn-sm btn-secondary" onclick="addInvoiceRecipient()">Add</button>
+        </div>
+
+        <div class="divider"></div>
         <div class="settings-label" style="margin-bottom:4px">EmailJS Credentials</div>
         <div class="settings-hint" style="margin-bottom:12px">
           Sign up free at <a href="https://emailjs.com" target="_blank" style="color:var(--pink)">emailjs.com</a>,
@@ -1412,6 +1576,7 @@ function renderSettings(s, intg={}) {
   `;
   window._currentSettings = s;
   window._currentRecipients = [...recipientList];
+  window._currentInvoiceRecipients = (s.invoiceRecipients||'').split(',').map(e=>e.trim()).filter(Boolean);
   window._currentIntegrations = intg;
   setTimeout(renderUserManagement, 100);
 }
@@ -1422,7 +1587,8 @@ async function saveEmailSetting() {
   const serviceId = (document.getElementById('ej-service')||{}).value||'';
   const templateId = (document.getElementById('ej-template')||{}).value||'';
   const recipients = (window._currentRecipients||[]).join(',');
-  const data = { enabled, publicKey, serviceId, templateId, recipients };
+  const invoiceRecipients = (window._currentInvoiceRecipients||[]).join(',');
+  const data = { enabled, publicKey, serviceId, templateId, recipients, invoiceRecipients };
   try {
     const snap = await getDocs(collection(db,'settings'));
     let exists = false;
@@ -1461,6 +1627,52 @@ window.removeRecipient = function(email) {
   renderRecipientTags();
   saveEmailSetting();
 };
+
+window.addInvoiceRecipient = function() {
+  const inp = document.getElementById('new-invoice-recipient');
+  const email = (inp.value||'').trim().toLowerCase();
+  if(!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
+  if((window._currentInvoiceRecipients||[]).includes(email)) { alert('That address is already added.'); inp.value=''; return; }
+  window._currentInvoiceRecipients = [...(window._currentInvoiceRecipients||[]), email];
+  inp.value = '';
+  renderInvoiceRecipientTags();
+  saveEmailSetting();
+};
+
+window.removeInvoiceRecipient = function(email) {
+  window._currentInvoiceRecipients = (window._currentInvoiceRecipients||[]).filter(e=>e!==email);
+  renderInvoiceRecipientTags();
+  saveEmailSetting();
+};
+
+function renderInvoiceRecipientTags() {
+  const el = document.getElementById('invoice-recipient-tags'); if(!el) return;
+  el.innerHTML = (window._currentInvoiceRecipients||[]).map(e=>`
+    <span class="email-tag">${esc(e)}<button onclick="removeInvoiceRecipient('${esc(e)}')" title="Remove">×</button></span>`).join('');
+}
+
+window.addInvoiceRecipient = function() {
+  const inp = document.getElementById('new-invoice-recipient');
+  const email = (inp.value||'').trim().toLowerCase();
+  if(!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
+  if((window._currentInvoiceRecipients||[]).includes(email)) { alert('That address is already added.'); inp.value=''; return; }
+  window._currentInvoiceRecipients = [...(window._currentInvoiceRecipients||[]), email];
+  inp.value = '';
+  renderInvoiceRecipientTags();
+  saveEmailSetting();
+};
+
+window.removeInvoiceRecipient = function(email) {
+  window._currentInvoiceRecipients = (window._currentInvoiceRecipients||[]).filter(e=>e!==email);
+  renderInvoiceRecipientTags();
+  saveEmailSetting();
+};
+
+function renderInvoiceRecipientTags() {
+  const el = document.getElementById('invoice-recipient-tags'); if(!el) return;
+  el.innerHTML = (window._currentInvoiceRecipients||[]).map(e=>`
+    <span class="email-tag">${esc(e)}<button onclick="removeInvoiceRecipient('${esc(e)}')" title="Remove">×</button></span>`).join('');
+}
 
 function renderRecipientTags() {
   const el = document.getElementById('recipient-tags'); if(!el) return;
@@ -1807,6 +2019,7 @@ onAuthStateChanged(auth, async (user) => {
     try { await bootSubmitTab(_isAdmin ? null : user.email); } catch(e) { console.error(e); }
     try { renderArtistPortal(user.email); } catch(e) { console.error(e); }
     try { renderSalesPortal(user.email); } catch(e) { console.error(e); }
+    try { renderInvoicesPortal(user.email); } catch(e) { console.error(e); }
     loadEmailSettings().catch(e => console.warn('Settings load error:', e));
 
     // If artist (not admin), go straight to submit tab
