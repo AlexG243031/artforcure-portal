@@ -2229,8 +2229,11 @@ window.unarchiveSubmission = async function(id) {
 // Run manually from the browser console: runShopifyImport()
 // Not linked to any UI — safe to leave in place, does nothing unless called.
 // ─────────────────────────────────────────
-window.runShopifyImport = async function(){
+window.runShopifyImport = async function(onlyCollectionNames){
   const LOWER_COMMISSION = new Set(['caro burberry','carol peace','designs on metal','jeremy moulsdale','john cox','sophie cook']);
+  const allowList = Array.isArray(onlyCollectionNames) && onlyCollectionNames.length
+    ? new Set(onlyCollectionNames.map(n=>n.trim().toLowerCase()))
+    : null;
   const intg = window._currentIntegrations || {};
   if(!intg.shopifyStore || !intg.shopifyClientId || !intg.shopifyClientSecret){
     console.error('Shopify credentials not loaded — make sure you are logged in as admin and have visited Settings once this session.');
@@ -2261,6 +2264,7 @@ window.runShopifyImport = async function(){
 
   for(const col of collections){
     const nameKey = col.title.trim().toLowerCase();
+    if(allowList && !allowList.has(nameKey)) continue;
     const email = artistByName[nameKey];
     if(!email){ unmatched.push(col.title); continue; }
 
