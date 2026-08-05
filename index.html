@@ -1651,29 +1651,6 @@ function renderInvoiceRecipientTags() {
     <span class="email-tag">${esc(e)}<button onclick="removeInvoiceRecipient('${esc(e)}')" title="Remove">×</button></span>`).join('');
 }
 
-window.addInvoiceRecipient = function() {
-  const inp = document.getElementById('new-invoice-recipient');
-  const email = (inp.value||'').trim().toLowerCase();
-  if(!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
-  if((window._currentInvoiceRecipients||[]).includes(email)) { alert('That address is already added.'); inp.value=''; return; }
-  window._currentInvoiceRecipients = [...(window._currentInvoiceRecipients||[]), email];
-  inp.value = '';
-  renderInvoiceRecipientTags();
-  saveEmailSetting();
-};
-
-window.removeInvoiceRecipient = function(email) {
-  window._currentInvoiceRecipients = (window._currentInvoiceRecipients||[]).filter(e=>e!==email);
-  renderInvoiceRecipientTags();
-  saveEmailSetting();
-};
-
-function renderInvoiceRecipientTags() {
-  const el = document.getElementById('invoice-recipient-tags'); if(!el) return;
-  el.innerHTML = (window._currentInvoiceRecipients||[]).map(e=>`
-    <span class="email-tag">${esc(e)}<button onclick="removeInvoiceRecipient('${esc(e)}')" title="Remove">×</button></span>`).join('');
-}
-
 function renderRecipientTags() {
   const el = document.getElementById('recipient-tags'); if(!el) return;
   el.innerHTML = (window._currentRecipients||[]).map(e=>`
