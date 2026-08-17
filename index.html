@@ -245,7 +245,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
-      <button class="nav-tab" id="tab-behalf" style="display:none;" onclick="showTab('behalf')">🎨 On Behalf of Artist</button>
+      <button class="nav-tab" id="tab-behalf" style="display:none;" onclick="showTab('behalf')">🎨 Current Artists</button>
       <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
     </div>
     <div class="user-chip">
@@ -363,14 +363,57 @@ window.showTab = function(tab) {
 
 function renderBehalfHub(){
   document.getElementById('view-behalf').innerHTML = `
-    <div class="page-title">On Behalf of Artist</div>
-    <div class="page-sub">For artists who can't access a computer — submit new work, or check their submissions and sales, on their behalf.</div>
-    <div class="filter-bar">
-      <button class="btn btn-primary btn-sm" onclick="showTab('submit')">Submit Work for Artist</button>
-      <button class="btn btn-secondary btn-sm" onclick="showTab('artist')">Submissions Made by Artist</button>
-      <button class="btn btn-secondary btn-sm" onclick="showTab('sales')">Sales for Artist</button>
+    <div class="page-title">Current Artists</div>
+    <div class="page-sub">Browse all current artists below, or act on an artist's behalf if they can't access a computer themselves.</div>
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> All Artists</div>
+      <div id="current-artists-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>
+    </div>
+    <div style="margin:1.5rem 0 1rem">
+      <button class="btn btn-secondary btn-sm" onclick="toggleOnBehalfPanel()">🎨 On Behalf of Artist</button>
+    </div>
+    <div id="on-behalf-panel" style="display:none">
+      <div class="filter-bar">
+        <button class="btn btn-primary btn-sm" onclick="showTab('submit')">Submit Work for Artist</button>
+        <button class="btn btn-secondary btn-sm" onclick="showTab('artist')">Submissions Made by Artist</button>
+        <button class="btn btn-secondary btn-sm" onclick="showTab('sales')">Sales for Artist</button>
+      </div>
     </div>`;
+  loadCurrentArtistsList();
 }
+window.toggleOnBehalfPanel = function(){
+  const p = document.getElementById('on-behalf-panel');
+  if(p) p.style.display = p.style.display==='none' ? '' : 'none';
+};
+async function loadCurrentArtistsList(){
+  const el = document.getElementById('current-artists-list');
+  try{
+    const snap = await getDocs(collection(db,'submissions'));
+    const byEmail = {};
+    snap.forEach(d=>{
+      const data = d.data();
+      const email = (data.artist?.email||'').toLowerCase().trim();
+      const name = data.artist?.name||'';
+      if(!email || !name) return;
+      if(!byEmail[email]) byEmail[email] = { name, email, count: 0 };
+      byEmail[email].count++;
+    });
+    const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!artists.length){ el.innerHTML = '<div class="empty-state"><h3>No artists yet.</h3></div>'; return; }
+    el.innerHTML = artists.map(a => `
+      <div class="user-row" style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">
+        <div>
+          <div class="user-name">${esc(a.name)}</div>
+          <div class="user-email">${esc(a.email)} &middot; ${a.count} submission${a.count===1?'':'s'}</div>
+        </div>
+        <span class="toggle-btn">View →</span>
+      </div>`).join('');
+  }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+window.viewArtistFromList = function(email){
+  showTab('artist');
+  lookupArtist(email);
+};
 
 // ── Image helpers ──
 window.handleImageFiles = function(files) {
@@ -480,7 +523,7 @@ function renderSubmit(state){
   const isOneOff=piece.edition==='One Off', words=wc(artist.bio);
 
   let html=`
-    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to Current Artists</a>':''}
     <div class="page-title">Submit Your Artwork</div>
     <div class="page-sub">Share your work with Art for Cure — we review every submission personally.</div>
     <div class="steps">
@@ -766,63 +809,109 @@ window.submitAnother = function(){
 function renderArtistPortal(prefillEmail){
   const lookupBlock = _isAdmin ? `<div class="card">
       <div class="lookup-row">
-        <input id="lookup-email" type="email" placeholder="Artist's email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupArtist()"/>
-        <button class="btn btn-primary" onclick="lookupArtist()">Look Up</button>
+        <input id="lookup-name" type="text" placeholder="Artist's name (any part of first or last name)" onkeydown="if(event.key==='Enter')lookupArtistByName()"/>
+        <button class="btn btn-primary" onclick="lookupArtistByName()">Look Up</button>
       </div>
       <div id="lookup-result"></div>
     </div>` : `<div id="lookup-result"></div>`;
   document.getElementById('view-artist').innerHTML=`
-    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to Current Artists</a>':''}
     <div class="page-title">My Submissions</div>
-    <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their submission." : "Here's your current submission."}</div>
+    <div class="page-sub">${_isAdmin ? "Enter any part of the artist's name to view their submissions." : "Here's your current submission."}</div>
     ${lookupBlock}
     <div id="artist-details"></div>`;
   if(prefillEmail) lookupArtist(prefillEmail);
 }
-window.lookupArtist = async function(presetEmail){
-  const email=(presetEmail || document.getElementById('lookup-email').value.trim()).toLowerCase();
+window.lookupArtist = async function(email){
   if(!email)return;
   const res=document.getElementById('lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
-    const snap=await getDocs(query(collection(db,'submissions'),where('artist.email','==',email),orderBy('createdAt','desc')));
-    if(snap.empty){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submission found for that email address.</div>';document.getElementById('artist-details').innerHTML='';return;}
+    const snap=await getDocs(query(collection(db,'submissions'),where('artist.email','==',email.toLowerCase()),orderBy('createdAt','desc')));
+    if(snap.empty){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submission found for that artist.</div>';document.getElementById('artist-details').innerHTML='';return;}
     res.innerHTML='';
     const subs=[]; snap.forEach(d=>subs.push({id:d.id,...d.data()}));
-   renderArtistDetails(subs);
+    renderArtistDetails(subs);
+  }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
+};
+window.lookupArtistByName = async function(){
+  const nameInput = document.getElementById('lookup-name');
+  const fragment = (nameInput ? nameInput.value.trim().toLowerCase() : '');
+  if(!fragment)return;
+  const res=document.getElementById('lookup-result');
+  res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
+  try{
+    const snap=await getDocs(query(collection(db,'submissions'),orderBy('createdAt','desc')));
+    const subs=[];
+    snap.forEach(d=>{
+      const data=d.data();
+      const name=(data.artist?.name||'').toLowerCase();
+      if(name.split(/\s+/).some(part=>part.includes(fragment)) || name.includes(fragment)){
+        subs.push({id:d.id,...data});
+      }
+    });
+    if(!subs.length){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submissions found matching that name.</div>';document.getElementById('artist-details').innerHTML='';return;}
+    res.innerHTML='';
+    renderArtistDetails(subs);
   }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
 };
 
 function renderSalesPortal(prefillEmail){
   const lookupBlock = _isAdmin ? `<div class="card">
       <div class="lookup-row">
-        <input id="sales-lookup-email" type="email" placeholder="Artist's email address" value="${esc(prefillEmail||'')}" onkeydown="if(event.key==='Enter')lookupSales()"/>
-        <button class="btn btn-primary" onclick="lookupSales()">Look Up</button>
+        <input id="sales-lookup-name" type="text" placeholder="Artist's name (any part of first or last name)" onkeydown="if(event.key==='Enter')lookupSalesByName()"/>
+        <button class="btn btn-primary" onclick="lookupSalesByName()">Look Up</button>
       </div>
       <div id="sales-lookup-result"></div>
     </div>` : `<div id="sales-lookup-result"></div>`;
   document.getElementById('view-sales').innerHTML=`
-    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to On Behalf of Artist</a>':''}
+    ${_isAdmin?'<a href="#" onclick="event.preventDefault();showTab(\'behalf\')" style="display:inline-block;margin-bottom:12px;color:var(--pink);font-size:13px;text-decoration:none;">← Back to Current Artists</a>':''}
     <div class="page-title">My Sales</div>
-    <div class="page-sub">${_isAdmin ? "Enter the artist's email address to view their sales." : "Here are your current sales."}</div>
+    <div class="page-sub">${_isAdmin ? "Enter any part of the artist's name to view their sales." : "Here are your current sales."}</div>
     ${lookupBlock}
     <div id="sales-details"></div>`;
   if(prefillEmail) lookupSales(prefillEmail);
 }
 
-window.lookupSales = async function(presetEmail){
-  const email=(presetEmail || document.getElementById('sales-lookup-email').value.trim()).toLowerCase();
+window.lookupSales = async function(email){
   if(!email)return;
   const res=document.getElementById('sales-lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
-    const snap = await getDocs(query(collection(db,'sale_notifications'), where('artistEmail','==',email)));
+    const snap = await getDocs(query(collection(db,'sale_notifications'), where('artistEmail','==',email.toLowerCase())));
     const sales = []; snap.forEach(d=>sales.push({id:d.id, ...d.data()}));
     res.innerHTML='';
-    if(!sales.length){ document.getElementById('sales-details').innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No sales found for that email address.</div>'; return; }
-    document.getElementById('sales-details').innerHTML = sales.map(s => `<div class="card" style="border-left:4px solid ${s.fulfilled?'#2a7a50':'#D30180'}">
+    if(!sales.length){ document.getElementById('sales-details').innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No sales found for that artist.</div>'; return; }
+    renderSalesResults(sales);
+  }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
+};
+
+window.lookupSalesByName = async function(){
+  const nameInput = document.getElementById('sales-lookup-name');
+  const fragment = (nameInput ? nameInput.value.trim().toLowerCase() : '');
+  if(!fragment)return;
+  const res=document.getElementById('sales-lookup-result');
+  res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
+  try{
+    const snap = await getDocs(collection(db,'sale_notifications'));
+    const sales = [];
+    snap.forEach(d=>{
+      const data=d.data();
+      const name=(data.artistName||'').toLowerCase();
+      if(name.split(/\s+/).some(part=>part.includes(fragment)) || name.includes(fragment)){
+        sales.push({id:d.id, ...data});
+      }
+    });
+    res.innerHTML='';
+    if(!sales.length){ document.getElementById('sales-details').innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No sales found matching that name.</div>'; return; }
+    renderSalesResults(sales);
+  }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
+};
+
+function renderSalesResults(sales){
+  document.getElementById('sales-details').innerHTML = sales.map(s => `<div class="card" style="border-left:4px solid ${s.fulfilled?'#2a7a50':'#D30180'}">
       <div class="sub-header">
-        <div><div class="sub-artist">${esc(s.pieceName||'')}</div><div class="sub-piece">Sold to ${esc(s.buyerName||'')}</div></div>
+        <div><div class="sub-artist">${esc(s.pieceName||'')}</div><div class="sub-piece">${esc(s.artistName||'')} &middot; Sold to ${esc(s.buyerName||'')}</div></div>
         <span class="badge ${s.fulfilled?'badge-approved':'badge-pending'}">${s.fulfilled?'Fulfilled':'Awaiting Fulfillment'}</span>
       </div>
       <div class="detail-grid">
@@ -830,8 +919,7 @@ window.lookupSales = async function(presetEmail){
       </div>
       ${!s.fulfilled?`<div style="margin-top:1rem"><button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button></div>`:''}
     </div>`).join('');
-  }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
-};
+}
 
 window.markFulfilled = async function(saleId){
   if(!confirm('Confirm this item has been delivered to the buyer?')) return;
@@ -1039,7 +1127,7 @@ function renderArtistDetails(subs){
       <div class="img-grid-display" style="margin-top:8px">${imgs.map(img=>`<a href="${esc(img.url)}" target="_blank"><img src="${esc(img.url)}" alt="Artwork" loading="lazy"/></a>`).join('')}</div></div>`:'';
     return `<div class="card" style="border-left:4px solid ${sc}">
       <div class="sub-header">
-        <div><div class="sub-artist">${esc(sub.piece.name)}</div><div class="sub-piece">${sub.category}</div></div>
+        <div><div class="sub-artist">${esc(sub.piece.name)}</div><div class="sub-piece">${esc(sub.artist?.name||'')} &middot; ${sub.category}</div></div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
           <span class="badge badge-${sub.status}">${sub.status.charAt(0).toUpperCase()+sub.status.slice(1)}</span>
           ${sub.shopifyId?'<span class="shopify-tag">Live on Shopify</span>':''}
