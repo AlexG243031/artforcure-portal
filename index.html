@@ -1327,7 +1327,7 @@ window.saveEdit=async function(id){
 // ─────────────────────────────────────────
 // ADMIN PANEL
 // ─────────────────────────────────────────
-let _adminFilter='all', _adminSubs=[], _expandedId=null;
+let _adminFilter='pending', _adminSubs=[], _expandedId=null;
 async function loadAdmin(){
   const v=document.getElementById('view-admin');
   v.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading…</div>';
@@ -1339,9 +1339,11 @@ async function loadAdmin(){
 }
 function renderAdmin(){
   const v=document.getElementById('view-admin');
-  const counts={all:_adminSubs.length,pending:0,approved:0,rejected:0};
-  _adminSubs.forEach(s=>{if(counts[s.status]!==undefined)counts[s.status]++;});
-  const filtered=_adminFilter==='all'?_adminSubs:_adminSubs.filter(s=>s.status===_adminFilter);
+  const pendingCount = _adminSubs.filter(s=>s.status==='pending').length;
+  const reviewedCount = _adminSubs.filter(s=>s.status==='approved'||s.status==='rejected').length;
+  const filtered = _adminFilter==='pending'
+    ? _adminSubs.filter(s=>s.status==='pending')
+    : _adminSubs.filter(s=>s.status==='approved'||s.status==='rejected');
   let html=`
     <div class="page-title">Admin Review</div>
     <div class="page-sub">Review submissions, set commissions, and publish to Shopify.</div>
@@ -1350,9 +1352,8 @@ function renderAdmin(){
       <button class="btn btn-sm btn-secondary" onclick="testStorageConnection()">🔧 Test image upload connection</button>
     </div>
     <div class="filter-bar">
-      ${['all','pending','approved','rejected'].map(f=>`
-        <button class="btn btn-sm ${_adminFilter===f?'btn-primary':'btn-secondary'}" onclick="setFilter('${f}')">
-          ${f.charAt(0).toUpperCase()+f.slice(1)} (${counts[f]})</button>`).join('')}
+      <button class="btn btn-sm ${_adminFilter==='pending'?'btn-primary':'btn-secondary'}" onclick="setFilter('pending')">Awaiting Review (${pendingCount})</button>
+      <button class="btn btn-sm ${_adminFilter==='reviewed'?'btn-primary':'btn-secondary'}" onclick="setFilter('reviewed')">Previously Reviewed (${reviewedCount})</button>
     </div>`;
   if(!filtered.length) html+='<div class="empty-state"><h3>No submissions to show.</h3></div>';
   filtered.forEach(sub=>{
