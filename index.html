@@ -1356,13 +1356,21 @@ window.saveEdit=async function(id){
 // ─────────────────────────────────────────
 // ADMIN PANEL
 // ─────────────────────────────────────────
-let _adminFilter='pending', _adminSubs=[], _expandedId=null;
+let _adminFilter='pending', _adminSubs=[], _expandedId=null, _adminLoadedFilter=null;
 async function loadAdmin(){
+  if(_adminLoadedFilter===_adminFilter){ renderAdmin(); return; }
   const v=document.getElementById('view-admin');
   v.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading…</div>';
   try{
-    const snap=await getDocs(query(collection(db,'submissions'),orderBy('createdAt','desc')));
+    let q;
+    if(_adminFilter==='pending'){
+      q = query(collection(db,'submissions'), where('status','==','pending'), orderBy('createdAt','desc'));
+    } else {
+      q = query(collection(db,'submissions'), where('status','in',['approved','rejected']), orderBy('createdAt','desc'));
+    }
+    const snap=await getDocs(q);
     _adminSubs=[]; snap.forEach(d=>{ const sub={id:d.id,...d.data()}; if(!sub.archived) _adminSubs.push(sub); });
+    _adminLoadedFilter=_adminFilter;
     renderAdmin();
   }catch(err){v.innerHTML=`<div class="alert alert-danger">Error: ${err.message}</div>`;}
 }
@@ -1475,7 +1483,7 @@ window.pushToSheetsBtn = async function(id) {
     btn.disabled=false; btn.textContent='📊 Push to Sheet';
   }
 };
-window.setFilter=function(f){_adminFilter=f;renderAdmin();};
+window.setFilter=function(f){_adminFilter=f;loadAdmin();};
 window.toggleExpand=function(id){_expandedId=_expandedId===id?null:id;renderAdmin();};
 window.updateCommission=async function(id,val){
   const pct=Math.min(100,Math.max(0,parseFloat(val)||0));
