@@ -364,15 +364,18 @@ window.showTab = function(tab) {
 function renderBehalfHub(){
   document.getElementById('view-behalf').innerHTML = `
     <div class="page-title">Current Artists</div>
-    <div class="page-sub">Browse all current artists below, or act on an artist's behalf if they can't access a computer themselves.</div>
-    <div class="card">
-      <div class="card-title"><span class="pink-dot"></span> All Artists</div>
-      <div id="current-artists-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>
+    <div class="page-sub">Browse all current artists, or act on an artist's behalf if they can't access a computer themselves.</div>
+    <div class="filter-bar">
+      <button class="btn btn-sm btn-primary" id="behalf-subtab-list" onclick="switchBehalfPanel('list')">All Artists</button>
+      <button class="btn btn-sm btn-secondary" id="behalf-subtab-onbehalf" onclick="switchBehalfPanel('onbehalf')">🎨 On Behalf of Artist</button>
     </div>
-    <div style="margin:1.5rem 0 1rem">
-      <button class="btn btn-secondary btn-sm" onclick="toggleOnBehalfPanel()">🎨 On Behalf of Artist</button>
+    <div id="behalf-panel-list">
+      <div class="card">
+        <div class="card-title"><span class="pink-dot"></span> All Artists</div>
+        <div id="current-artists-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>
+      </div>
     </div>
-    <div id="on-behalf-panel" style="display:none">
+    <div id="behalf-panel-onbehalf" style="display:none">
       <div class="filter-bar">
         <button class="btn btn-primary btn-sm" onclick="showTab('submit')">Submit Work for Artist</button>
         <button class="btn btn-secondary btn-sm" onclick="showTab('artist')">Submissions Made by Artist</button>
@@ -381,9 +384,11 @@ function renderBehalfHub(){
     </div>`;
   loadCurrentArtistsList();
 }
-window.toggleOnBehalfPanel = function(){
-  const p = document.getElementById('on-behalf-panel');
-  if(p) p.style.display = p.style.display==='none' ? '' : 'none';
+window.switchBehalfPanel = function(panel){
+  document.getElementById('behalf-panel-list').style.display = panel==='list'?'':'none';
+  document.getElementById('behalf-panel-onbehalf').style.display = panel==='onbehalf'?'':'none';
+  document.getElementById('behalf-subtab-list').className = 'btn btn-sm '+(panel==='list'?'btn-primary':'btn-secondary');
+  document.getElementById('behalf-subtab-onbehalf').className = 'btn btn-sm '+(panel==='onbehalf'?'btn-primary':'btn-secondary');
 };
 async function loadCurrentArtistsList(){
   const el = document.getElementById('current-artists-list');
