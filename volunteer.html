@@ -215,6 +215,15 @@
       .card { padding: 2rem 1.5rem; }
       .form-row { grid-template-columns: 1fr; }
     }
+
+    .hp-field {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
   </style>
 </head>
 <body>
@@ -280,6 +289,11 @@
           </div>
         </div>
 
+        <div class="hp-field" aria-hidden="true">
+          <label for="website">Website</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" />
+        </div>
+
         <button type="submit" class="submit-btn" id="submit-btn">Register as a Volunteer</button>
         <div class="error-msg" id="error-msg">Something went wrong. Please try again.</div>
       </form>
@@ -310,11 +324,23 @@ import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
+  const formLoadedAt = Date.now();
+
   document.getElementById('volunteer-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const btn = document.getElementById('submit-btn');
     const errorMsg = document.getElementById('error-msg');
+
+    // Silently reject bots: honeypot field filled in, or submitted implausibly fast
+    const honeypot = document.getElementById('website').value;
+    const tooFast = (Date.now() - formLoadedAt) < 2000;
+    if (honeypot || tooFast) {
+      document.getElementById('form-section').style.display = 'none';
+      document.getElementById('success-msg').style.display = 'block';
+      return;
+    }
+
     btn.disabled = true;
     btn.textContent = 'Registering…';
     errorMsg.style.display = 'none';
