@@ -3027,7 +3027,7 @@ window.switchVolunteersPanel = function(panel){
   if(panel==='events') loadEvents();
 };
 
-async function loadVolunteers() {
+window.loadVolunteers = async function loadVolunteers() {
    const v = document.getElementById('vol-panel-volunteers');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading volunteers...</div>';
   try {
