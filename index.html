@@ -25,6 +25,9 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 .nav-tab { padding: 7px 18px; border-radius: 7px; border: none; background: transparent; cursor: pointer; font-family: var(--font); font-size: 13px; color: var(--gray-text); transition: all 0.15s; }
 .nav-tab:hover { background: var(--pink-light); color: var(--pink-dark); }
 .nav-tab.active { background: var(--pink); color: white; font-weight: 700; }
+.hamburger-btn { display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--dark); padding: 4px 8px; }
+.mobile-menu-overlay { display: none; position: fixed; inset: 0; background: rgba(37,26,31,0.5); z-index: 150; }
+.mobile-menu-overlay.visible { display: block; }
 .main { max-width: 880px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
 .page-title { font-size: 24px; font-weight: 700; color: var(--dark); margin-bottom: 4px; }
 .page-sub { font-size: 14px; color: var(--gray-text); margin-bottom: 2rem; line-height: 1.5; }
@@ -168,8 +171,21 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 @media (max-width: 600px) {
   .form-row { grid-template-columns: 1fr; }
   .form-row.triple { grid-template-columns: 1fr 1fr; }
-  .top-bar { padding: 0 1rem; }
-  .nav-tab { padding: 6px 10px; font-size: 12px; }
+  .top-bar { padding: 0 0.75rem; }
+  .logo-sub { display: none; }
+  .logo-label { font-size: 15px; }
+  .logo-fallback { width: 34px; height: 34px; font-size: 11px; }
+  #user-chip-name { display: none; }
+  .hamburger-btn { display: block; }
+  .nav-tabs {
+    position: fixed; top: 0; left: 0; bottom: 0; width: 250px;
+    background: var(--white); flex-direction: column; align-items: stretch;
+    padding: 70px 14px 14px; box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+    transform: translateX(-100%); transition: transform 0.25s ease;
+    z-index: 200; overflow-y: auto; gap: 2px;
+  }
+  .nav-tabs.mobile-menu-open { transform: translateX(0); }
+  .nav-tab { text-align: left; padding: 10px 12px; font-size: 14px; }
   .main { padding: 1.5rem 1rem 3rem; }
   .img-previews { grid-template-columns: repeat(2, 1fr); }
 }
@@ -232,7 +248,8 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 </div>
 
 <div id="app" style="display:none;">
-  <div class="top-bar">
+ <div class="top-bar">
+    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMobileMenu()" aria-label="Menu">☰</button>
     <div class="logo-area">
       <div class="logo-fallback">AFC</div>
       <div><div class="logo-label">Art for Cure</div><div class="logo-sub">Artist Submission Portal</div></div>
@@ -254,6 +271,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="btn btn-sm btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="doSignOut()">Sign out</button>
     </div>
   </div>
+  <div class="mobile-menu-overlay" id="mobile-menu-overlay" onclick="closeMobileMenu()"></div>
   <div class="main">
     <div id="view-submit"></div>
     <div id="view-artist" style="display:none;"></div>
@@ -348,7 +366,17 @@ function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&
 
 window._pendingImages = [];
 
+window.toggleMobileMenu = function(){
+  document.querySelector('.nav-tabs').classList.toggle('mobile-menu-open');
+  document.getElementById('mobile-menu-overlay').classList.toggle('visible');
+};
+window.closeMobileMenu = function(){
+  document.querySelector('.nav-tabs').classList.remove('mobile-menu-open');
+  const ov=document.getElementById('mobile-menu-overlay'); if(ov)ov.classList.remove('visible');
+};
+
 window.showTab = function(tab) {
+  closeMobileMenu();
   ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
