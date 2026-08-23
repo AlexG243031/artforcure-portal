@@ -796,8 +796,8 @@ window.doSubmit = async function(){
   let docRef;
   const now=nowStr();
   try{
-    docRef=await addDoc(collection(db,'submissions'),{
-      artist:s.artist,category:s.category,piece:p,status:'pending',commission:40,
+docRef=await addDoc(collection(db,'submissions'),{
+      artist:s.artist,category:s.category,piece:p,status:'pending',commission:(s.category==='Sculpture'?30:50),
       submittedAt:now,shopifyId:null,images:[],
       auditLog:[{ts:now,by:'Artist',note:'Submitted'}],createdAt:serverTimestamp()
     });
