@@ -406,13 +406,114 @@ function renderBehalfHub(){
     </div>
     <div id="behalf-panel-onbehalf" style="display:none">
       <div class="filter-bar">
-        <button class="btn btn-primary btn-sm" onclick="showTab('submit')">Submit Work for Artist</button>
+        <button class="btn btn-primary btn-sm" onclick="showBehalfSearch('submit')">Submit Work for Artist</button>
+        <button class="btn btn-secondary btn-sm" onclick="showBehalfSearch('bio')">📝 Submit Bio for Artist</button>
         <button class="btn btn-secondary btn-sm" onclick="showTab('artist')">Submissions Made by Artist</button>
         <button class="btn btn-secondary btn-sm" onclick="showTab('sales')">Sales for Artist</button>
       </div>
     </div>`;
   loadCurrentArtistsList();
 }
+
+window.showBehalfSearch = function(mode){
+  window._behalfSearchMode = mode;
+  document.getElementById('behalf-panel-onbehalf').innerHTML = `
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> ${mode==='bio'?'Submit Bio for Artist':'Submit Work for Artist'}</div>
+      <div class="lookup-row">
+        <input id="behalf-search-input" type="text" placeholder="Artist's name (any part) or email address" onkeydown="if(event.key==='Enter')runBehalfSearch()"/>
+        <button class="btn btn-primary" onclick="runBehalfSearch()">Search</button>
+      </div>
+      <div id="behalf-search-results" style="margin-top:1rem"></div>
+      <div style="margin-top:1rem">
+        <button class="btn btn-secondary btn-sm" onclick="renderBehalfHub()">← Back</button>
+      </div>
+    </div>`;
+};
+
+window.runBehalfSearch = async function(){
+  const raw = (document.getElementById('behalf-search-input').value||'').trim().toLowerCase();
+  const res = document.getElementById('behalf-search-results');
+  if(!raw){ res.innerHTML=''; return; }
+  res.innerHTML = '<div class="loading-state"><div class="spinner"></div> Searching…</div>';
+  try{
+    const snap = await getDocs(collection(db,'submissions'));
+    const byEmail = {};
+    snap.forEach(d=>{
+      const data=d.data();
+      const email=(data.artist?.email||'').toLowerCase().trim();
+      const name=data.artist?.name||'';
+      if(!email||!name) return;
+      const nameLower=name.toLowerCase();
+      if(email.includes(raw) || nameLower.includes(raw) || nameLower.split(/\s+/).some(part=>part.includes(raw))){
+        if(!byEmail[email]) byEmail[email]={name,email};
+      }
+    });
+    const matches = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!matches.length){
+      res.innerHTML = `<div class="alert alert-warn">No matching artist found.</div>
+        ${window._behalfSearchMode==='bio'?'<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="submitBioForArtistEmail(\'\')">+ New artist bio</button>':''}`;
+      return;
+    }
+    res.innerHTML = matches.map(a=>`
+      <div class="user-row" style="cursor:pointer" onclick="selectBehalfArtist('${esc(a.email)}')">
+        <div><div class="user-name">${esc(a.name)}</div><div class="user-email">${esc(a.email)}</div></div>
+        <span class="toggle-btn">Select →</span>
+      </div>`).join('');
+  }catch(e){ res.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+};
+
+window.selectBehalfArtist = function(email){
+  if(window._behalfSearchMode==='bio'){ submitBioForArtistEmail(email); }
+  else { submitWorkForArtist(email); }
+};
+
+window.submitBioForArtistEmail = async function(email){
+  let profile = null;
+  if(email) profile = await lookupArtistProfile(email);
+  window._bioFormState = profile || {name:'',email:email||'',mobile:'',website:'',bio:'',photoUrl:''};
+  renderBioForm();
+};
+
+function renderBioForm(){
+  const a = window._bioFormState;
+  document.getElementById('behalf-panel-onbehalf').innerHTML = `
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> Submit Bio for Artist</div>
+      <div class="form-row">
+        <div class="field"><label>Full Name <span class="req">*</span></label><input id="bio-name" value="${esc(a.name)}"/></div>
+        <div class="field"><label>Email Address <span class="req">*</span></label><input id="bio-email" type="email" value="${esc(a.email)}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Mobile Number</label><input id="bio-mobile" value="${esc(a.mobile)}"/></div>
+        <div class="field"><label>Website</label><input id="bio-website" value="${esc(a.website)}"/></div>
+      </div>
+      <div class="form-row single">
+        <div class="field"><label>Short Bio</label><textarea id="bio-bio" oninput="updateWordCount(this)">${esc(a.bio)}</textarea>
+        <div class="word-count" id="wc-display">${wc(a.bio)}/100 words</div></div>
+      </div>
+      <div id="bio-form-status"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:1rem">
+        <button class="btn btn-secondary" onclick="renderBehalfHub()">← Back</button>
+        <button class="btn btn-primary" onclick="saveBioForm()">Save Bio</button>
+      </div>
+    </div>`;
+}
+
+window.saveBioForm = async function(){
+  const name=(document.getElementById('bio-name')||{}).value.trim();
+  const email=(document.getElementById('bio-email')||{}).value.trim().toLowerCase();
+  const mobile=(document.getElementById('bio-mobile')||{}).value.trim();
+  const website=(document.getElementById('bio-website')||{}).value.trim();
+  const bio=(document.getElementById('bio-bio')||{}).value.trim();
+  const status=document.getElementById('bio-form-status');
+  if(!name||!email){ status.innerHTML='<div class="alert alert-warn">Name and email are required.</div>'; return; }
+  if(wc(bio)>100){ status.innerHTML='<div class="alert alert-warn">Bio must be 100 words or fewer.</div>'; return; }
+  try{
+    await saveArtistProfile({name,email,mobile,website,bio,photoUrl:window._bioFormState.photoUrl||''});
+    status.innerHTML='<div class="alert alert-success">✓ Bio saved for '+esc(name)+'.</div>';
+  }catch(e){ status.innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+};
 window.switchBehalfPanel = function(panel){
   document.getElementById('behalf-panel-list').style.display = panel==='list'?'':'none';
   document.getElementById('behalf-panel-onbehalf').style.display = panel==='onbehalf'?'':'none';
@@ -435,18 +536,31 @@ async function loadCurrentArtistsList(){
     const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
     if(!artists.length){ el.innerHTML = '<div class="empty-state"><h3>No artists yet.</h3></div>'; return; }
     el.innerHTML = artists.map(a => `
-      <div class="user-row" style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">
-        <div>
+      <div class="user-row">
+        <div style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">
           <div class="user-name">${esc(a.name)}</div>
           <div class="user-email">${esc(a.email)} &middot; ${a.count} submission${a.count===1?'':'s'}</div>
         </div>
-        <span class="toggle-btn">View →</span>
+        <div style="display:flex;gap:14px;align-items:center">
+          <span class="toggle-btn" style="cursor:pointer" onclick="submitWorkForArtist('${esc(a.email)}')">Submit Work →</span>
+          <span class="toggle-btn" style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">View →</span>
+        </div>
       </div>`).join('');
   }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
 window.viewArtistFromList = function(email){
   showTab('artist');
   lookupArtist(email);
+};
+window.submitWorkForArtist = async function(email){
+  showTab('submit');
+  const profile = await lookupArtistProfile(email);
+  const base = defaultState();
+  if(profile){
+    renderSubmit({...base, step:2, artist:{name:profile.name||'',email:profile.email||email,mobile:profile.mobile||'',website:profile.website||'',bio:profile.bio||'',photoUrl:profile.photoUrl||''}, profileFound:true});
+  } else {
+    renderSubmit({...base, artist:{...base.artist, email}});
+  }
 };
 
 // ── Image helpers ──
@@ -591,7 +705,7 @@ function renderSubmit(state){
     </div>
     <div class="form-row single">
       <div class="field">
-        <label>Short Bio <span class="req">*</span></label>
+        <label>Short Bio</label>
         <textarea id="f-bio" oninput="updateWordCount(this)">${esc(artist.bio)}</textarea>
         <div class="word-count ${words>100?'over':''}" id="wc-display">${words}/100 words</div>
         <span class="hint">Saved to your profile — won't need re-entering next time.</span>
