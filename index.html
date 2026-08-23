@@ -2260,12 +2260,19 @@ window.createArtistAccount = async function() {
   const adminEmail = _currentUser?.email;
   const adminPassword = (document.getElementById('admin-reauth-password')||{}).value||'';
   if(!adminPassword) { errDiv.innerHTML='<div class="alert alert-warn">Enter your admin password below to confirm account creation.</div>'; btn.disabled=false; btn.textContent='Create Account'; return; }
+  let newUid = null;
   try {
-    // Save current admin credentials
+    // Step 1: create the account (this side-effect signs the browser in as the NEW user)
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await setDoc(doc(db,'users',cred.user.uid), { uid:cred.user.uid, name, email:email.toLowerCase(), role, disabled:false, createdAt:nowStr() });
-    // Sign back in as admin immediately
+    newUid = cred.user.uid;
+
+    // Step 2: sign back in as admin BEFORE writing Firestore — the new user has no
+    // role yet, so security rules would reject the write if done while signed in as them.
     await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+
+    // Step 3: now write the profile, authenticated as admin.
+    await setDoc(doc(db,'users',newUid), { uid:newUid, name, email:email.toLowerCase(), role, disabled:false, createdAt:nowStr() });
+
     document.getElementById('new-user-name').value='';
     document.getElementById('new-user-email').value='';
     document.getElementById('new-user-password').value='';
@@ -2275,7 +2282,13 @@ window.createArtistAccount = async function() {
   } catch(e) {
     let msg = e.message;
     if(e.code==='auth/email-already-in-use') msg='That email already has an account.';
-    if(e.code==='auth/wrong-password') msg='Admin password incorrect — account was created but you need to sign back in manually.';
+    if(e.code==='auth/wrong-password'){
+      msg = newUid
+        ? 'Admin password incorrect — the login account was created, but their profile could not be saved and you are no longer signed in as admin. Sign back in, then use the browser console to add their Firestore profile manually (uid: '+newUid+').'
+        : 'Admin password incorrect — no account was created.';
+    } else if(newUid){
+      msg = 'The login account was created, but saving their profile failed ('+msg+'). Their uid is '+newUid+' — you can add their Firestore profile manually with this uid, or try again (the email is now taken, so re-run this only after removing the orphaned Auth account, or add the Firestore doc directly).';
+    }
     errDiv.innerHTML='<div class="alert alert-danger">✗ '+msg+'</div>';
   }
   btn.disabled=false; btn.textContent='Create Account';
