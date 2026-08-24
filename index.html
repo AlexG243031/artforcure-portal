@@ -489,8 +489,8 @@ function renderBioForm(){
         <div class="field"><label>Website</label><input id="bio-website" value="${esc(a.website)}"/></div>
       </div>
       <div class="form-row single">
-        <div class="field"><label>Short Bio</label><textarea id="bio-bio" oninput="updateWordCount(this)">${esc(a.bio)}</textarea>
-        <div class="word-count" id="wc-display">${wc(a.bio)}/100 words</div></div>
+        <<div class="field"><label>Short Bio</label><textarea id="bio-bio" oninput="updateWordCount(this)">${esc(a.bio)}</textarea>
+        <div class="word-count" id="wc-display">${wc(a.bio)}/500 words</div></div>
       </div>
       <div id="bio-form-status"></div>
       <div style="display:flex;justify-content:space-between;margin-top:1rem">
@@ -508,7 +508,7 @@ window.saveBioForm = async function(){
   const bio=(document.getElementById('bio-bio')||{}).value.trim();
   const status=document.getElementById('bio-form-status');
   if(!name||!email){ status.innerHTML='<div class="alert alert-warn">Name and email are required.</div>'; return; }
-  if(wc(bio)>100){ status.innerHTML='<div class="alert alert-warn">Bio must be 100 words or fewer.</div>'; return; }
+  if(wc(bio)>500){ status.innerHTML='<div class="alert alert-warn">Bio must be 500 words or fewer.</div>'; return; }
   try{
     await saveArtistProfile({name,email,mobile,website,bio,photoUrl:window._bioFormState.photoUrl||''});
     status.innerHTML='<div class="alert alert-success">✓ Bio saved for '+esc(name)+'.</div>';
@@ -707,7 +707,7 @@ function renderSubmit(state){
       <div class="field">
         <label>Short Bio</label>
         <textarea id="f-bio" oninput="updateWordCount(this)">${esc(artist.bio)}</textarea>
-        <div class="word-count ${words>100?'over':''}" id="wc-display">${words}/100 words</div>
+        <div class="word-count ${words>500?'over':''}" id="wc-display">${words}/500 words</div>
         <span class="hint">Saved to your profile — won't need re-entering next time.</span>
       </div>
     </div>
@@ -830,7 +830,7 @@ window.checkProfile = async function(){
   }
 };
 window.clearProfile = function(){ const s=window._submitState; s.artist={name:'',email:'',mobile:'',website:'',bio:''}; s.profileFound=false; renderSubmit(s); };
-window.updateWordCount = function(el){ const c=wc(el.value), d=document.getElementById('wc-display'); if(d){d.textContent=c+'/100 words';d.className='word-count'+(c>100?' over':'');} };
+window.updateWordCount = function(el){ const c=wc(el.value), d=document.getElementById('wc-display'); if(d){d.textContent=c+'/500 words';d.className='word-count'+(c>500?' over':'');} };
 window.selectCategory = function(cat){ window._submitState.category=cat; document.querySelectorAll('#s2 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent===cat)); setTimeout(()=>{ window._submitState.step=3; renderSubmit(window._submitState); }, 300); };
 window.selectEdition = function(ed){ window._submitState.piece.edition=ed; document.querySelectorAll('#s3 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent.trim()===ed)); const ef=document.getElementById('edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':''; };
 window.toggleFrameDesc = function(val){ const w=document.getElementById('frame-desc-wrap'); if(w)w.style.display=val==='Framed'?'':'none'; };
@@ -882,7 +882,7 @@ window.submitStep1 = function(){
   s.artist.website=document.getElementById('f-website').value.trim();
   s.artist.bio=document.getElementById('f-bio').value.trim();
   if(!s.artist.name||!s.artist.email){alert('Please enter your name and email address.');return;}
-  if(wc(s.artist.bio)>100){alert('Your bio must be 100 words or fewer.');return;}
+  if(wc(s.artist.bio)>500){alert('Your bio must be 500 words or fewer.');return;}
   s.step=2; renderSubmit(s);
 };
 window.submitStep2 = function(){ if(!window._submitState.category){alert('Please select a category.');return;} window._submitState.step=3; renderSubmit(window._submitState); };
