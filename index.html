@@ -535,8 +535,13 @@ async function loadOnboardPanel(){
       if(!email||!name) return;
       if(!byEmail[email]) byEmail[email]={name,email};
     });
+    const usersSnap = await getDocs(collection(db,'users'));
+    const loginByEmail = {};
+    usersSnap.forEach(d=>{ const u=d.data(); if(u.email) loginByEmail[u.email.toLowerCase().trim()] = u.lastLoginAt||null; });
+
     const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
     window._onboardArtists = artists;
+    window._onboardLoginByEmail = loginByEmail;
     el.innerHTML = `
       <div class="card">
         <div class="card-title"><span class="pink-dot"></span> Onboard Artists</div>
@@ -550,11 +555,19 @@ async function loadOnboardPanel(){
           <div class="field"><label>EmailJS Template ID for this email</label><input id="onboard-template-id" type="text" placeholder="template_xxxxxxx"/>
           <span class="hint">Create this once in emailjs.com — see the instructions Claude gave you.</span></div>
         </div>
-        <div style="margin:1rem 0"><label style="font-size:12px"><input type="checkbox" id="onboard-select-all" checked onclick="toggleAllOnboard(this)"> Select all</label></div>
+        <div style="margin:1rem 0;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:12px"><input type="checkbox" id="onboard-select-all" checked onclick="toggleAllOnboard(this)"> Select all</label>
+          <button class="btn btn-sm btn-secondary" onclick="selectNeverLoggedIn()">Select only those who haven't logged in yet</button>
+        </div>
         <div id="onboard-artist-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--gray-border);border-radius:8px;padding:8px">
-          ${artists.map((a,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px">
-            <input type="checkbox" class="onboard-checkbox" value="${i}" checked> ${esc(a.name)} <span style="color:var(--gray-text)">(${esc(a.email)})</span>
-          </label>`).join('')}
+          ${artists.map((a,i)=>{
+            const hasLoggedIn = loginByEmail.hasOwnProperty(a.email);
+            const lastLogin = loginByEmail[a.email];
+            const statusText = !hasLoggedIn ? 'never emailed' : (lastLogin ? 'last login '+lastLogin : 'login created, not signed in yet');
+            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px">
+            <input type="checkbox" class="onboard-checkbox" value="${i}" checked> ${esc(a.name)} <span style="color:var(--gray-text)">(${esc(a.email)} — ${esc(statusText)})</span>
+          </label>`;
+          }).join('')}
         </div>
         <div id="onboard-status" style="margin-top:1rem"></div>
         <div id="onboard-log" style="margin-top:0.5rem;max-height:200px;overflow-y:auto;font-size:12px;font-family:monospace;color:var(--gray-text)"></div>
@@ -564,6 +577,16 @@ async function loadOnboardPanel(){
       </div>`;
   }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
+
+window.selectNeverLoggedIn = function(){
+  const loginByEmail = window._onboardLoginByEmail || {};
+  document.querySelectorAll('.onboard-checkbox').forEach(cb=>{
+    const a = window._onboardArtists[parseInt(cb.value)];
+    const hasLoggedIn = loginByEmail.hasOwnProperty(a.email) && !!loginByEmail[a.email];
+    cb.checked = !hasLoggedIn;
+  });
+  document.getElementById('onboard-select-all').checked = false;
+};
 
 window.toggleAllOnboard = function(master){
   document.querySelectorAll('.onboard-checkbox').forEach(cb=>cb.checked=master.checked);
@@ -633,19 +656,33 @@ async function loadCurrentArtistsList(){
       if(!byEmail[email]) byEmail[email] = { name, email, count: 0 };
       byEmail[email].count++;
     });
+    const usersSnap = await getDocs(collection(db,'users'));
+    const loginByEmail = {};
+    usersSnap.forEach(d=>{ const u=d.data(); if(u.email) loginByEmail[u.email.toLowerCase().trim()] = u.lastLoginAt||null; });
+
     const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
     if(!artists.length){ el.innerHTML = '<div class="empty-state"><h3>No artists yet.</h3></div>'; return; }
-    el.innerHTML = artists.map(a => `
+    el.innerHTML = artists.map(a => {
+      const hasLoggedIn = loginByEmail.hasOwnProperty(a.email);
+      const lastLogin = loginByEmail[a.email];
+      const loginBadge = !hasLoggedIn
+        ? '<span class="badge" style="background:var(--gray-bg);color:var(--gray-text);border:1px solid var(--gray-border)">No login yet</span>'
+        : lastLogin
+          ? '<span class="badge badge-approved">Last login: '+esc(lastLogin)+'</span>'
+          : '<span class="badge badge-pending">Login created, not signed in yet</span>';
+      return `
       <div class="user-row">
         <div style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">
           <div class="user-name">${esc(a.name)}</div>
           <div class="user-email">${esc(a.email)} &middot; ${a.count} submission${a.count===1?'':'s'}</div>
+          <div style="margin-top:4px">${loginBadge}</div>
         </div>
         <div style="display:flex;gap:14px;align-items:center">
           <span class="toggle-btn" style="cursor:pointer" onclick="submitWorkForArtist('${esc(a.email)}')">Submit Work →</span>
           <span class="toggle-btn" style="cursor:pointer" onclick="viewArtistFromList('${esc(a.email)}')">View →</span>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
 window.viewArtistFromList = function(email){
@@ -2380,6 +2417,7 @@ onAuthStateChanged(auth, async (user) => {
   if(user) {
     _currentUser = user;
     _isAdmin = await checkAdminRole(user.uid);
+    try { await updateDoc(doc(db,'users',user.uid), { lastLoginAt: nowStr() }); } catch(e) { /* ignore — doc may not exist yet */ }
 
     // Show app, hide login
     document.getElementById('login-screen').style.display='none';
