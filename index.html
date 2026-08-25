@@ -577,7 +577,7 @@ window.runBulkOnboard = async function(){
   if(!password || password.length<6){ status.innerHTML='<div class="alert alert-warn">Enter a shared password (at least 6 characters).</div>'; return; }
   if(!templateId){ status.innerHTML='<div class="alert alert-warn">Enter the EmailJS Template ID.</div>'; return; }
   const s = _emailSettings;
-  if(!s||!s.publicKey||s.publicKey==='YOUR_EMAILJS_PUBLIC_KEY'){ status.innerHTML='<div class="alert alert-warn">EmailJS isn\\'t configured — check Settings first.</div>'; return; }
+  if(!s||!s.publicKey||s.publicKey==='YOUR_EMAILJS_PUBLIC_KEY'){ status.innerHTML='<div class="alert alert-warn">EmailJS is not configured — check Settings first.</div>'; return; }
   const selectedIdx = Array.from(document.querySelectorAll('.onboard-checkbox:checked')).map(cb=>parseInt(cb.value));
   const selected = selectedIdx.map(i=>window._onboardArtists[i]);
   if(!selected.length){ status.innerHTML='<div class="alert alert-warn">Select at least one artist.</div>'; return; }
