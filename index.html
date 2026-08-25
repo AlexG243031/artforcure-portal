@@ -317,6 +317,8 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
+const secondaryApp = initializeApp(firebaseConfig, 'onboarding');
+const secondaryAuth = getAuth(secondaryApp);
 
 // ── Current user state ──
 let _currentUser = null;   // Firebase user object
@@ -397,6 +399,7 @@ function renderBehalfHub(){
     <div class="filter-bar">
       <button class="btn btn-sm btn-primary" id="behalf-subtab-list" onclick="switchBehalfPanel('list')">All Artists</button>
       <button class="btn btn-sm btn-secondary" id="behalf-subtab-onbehalf" onclick="switchBehalfPanel('onbehalf')">🎨 On Behalf of Artist</button>
+      <button class="btn btn-sm btn-secondary" id="behalf-subtab-onboard" onclick="switchBehalfPanel('onboard')">📧 Onboard Artists</button>
     </div>
     <div id="behalf-panel-list">
       <div class="card">
@@ -404,6 +407,7 @@ function renderBehalfHub(){
         <div id="current-artists-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>
       </div>
     </div>
+    <div id="behalf-panel-onboard" style="display:none"></div>
     <div id="behalf-panel-onbehalf" style="display:none">
       <div class="filter-bar">
         <button class="btn btn-primary btn-sm" onclick="showBehalfSearch('submit')">Submit Work for Artist</button>
@@ -514,11 +518,107 @@ window.saveBioForm = async function(){
     status.innerHTML='<div class="alert alert-success">✓ Bio saved for '+esc(name)+'.</div>';
   }catch(e){ status.innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 };
+
+// ─────────────────────────────────────────
+// BULK ARTIST ONBOARDING — create logins + send the intro email
+// ─────────────────────────────────────────
+async function loadOnboardPanel(){
+  const el = document.getElementById('behalf-panel-onboard');
+  el.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading artists…</div>';
+  try{
+    const snap = await getDocs(collection(db,'submissions'));
+    const byEmail = {};
+    snap.forEach(d=>{
+      const data=d.data();
+      const email=(data.artist?.email||'').toLowerCase().trim();
+      const name=data.artist?.name||'';
+      if(!email||!name) return;
+      if(!byEmail[email]) byEmail[email]={name,email};
+    });
+    const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
+    window._onboardArtists = artists;
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-title"><span class="pink-dot"></span> Onboard Artists</div>
+        <div class="alert alert-info" style="margin-bottom:1rem;font-size:12px">
+          Creates a login for each ticked artist (skipped automatically if they already have one) and sends them the intro email with this shared temporary password.
+        </div>
+        <div class="form-row single">
+          <div class="field"><label>Shared Temporary Password</label><input id="onboard-password" type="text" placeholder="e.g. ArtForCure2026"/></div>
+        </div>
+        <div class="form-row single">
+          <div class="field"><label>EmailJS Template ID for this email</label><input id="onboard-template-id" type="text" placeholder="template_xxxxxxx"/>
+          <span class="hint">Create this once in emailjs.com — see the instructions Claude gave you.</span></div>
+        </div>
+        <div style="margin:1rem 0"><label style="font-size:12px"><input type="checkbox" id="onboard-select-all" checked onclick="toggleAllOnboard(this)"> Select all</label></div>
+        <div id="onboard-artist-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--gray-border);border-radius:8px;padding:8px">
+          ${artists.map((a,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px">
+            <input type="checkbox" class="onboard-checkbox" value="${i}" checked> ${esc(a.name)} <span style="color:var(--gray-text)">(${esc(a.email)})</span>
+          </label>`).join('')}
+        </div>
+        <div id="onboard-status" style="margin-top:1rem"></div>
+        <div id="onboard-log" style="margin-top:0.5rem;max-height:200px;overflow-y:auto;font-size:12px;font-family:monospace;color:var(--gray-text)"></div>
+        <div style="margin-top:1rem">
+          <button class="btn btn-primary btn-sm" onclick="runBulkOnboard()">Create Logins &amp; Send Emails</button>
+        </div>
+      </div>`;
+  }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+
+window.toggleAllOnboard = function(master){
+  document.querySelectorAll('.onboard-checkbox').forEach(cb=>cb.checked=master.checked);
+};
+
+window.runBulkOnboard = async function(){
+  const password = (document.getElementById('onboard-password')||{}).value.trim();
+  const templateId = (document.getElementById('onboard-template-id')||{}).value.trim();
+  const status = document.getElementById('onboard-status');
+  const log = document.getElementById('onboard-log');
+  if(!password || password.length<6){ status.innerHTML='<div class="alert alert-warn">Enter a shared password (at least 6 characters).</div>'; return; }
+  if(!templateId){ status.innerHTML='<div class="alert alert-warn">Enter the EmailJS Template ID.</div>'; return; }
+  const s = _emailSettings;
+  if(!s||!s.publicKey||s.publicKey==='YOUR_EMAILJS_PUBLIC_KEY'){ status.innerHTML='<div class="alert alert-warn">EmailJS isn\\'t configured — check Settings first.</div>'; return; }
+  const selectedIdx = Array.from(document.querySelectorAll('.onboard-checkbox:checked')).map(cb=>parseInt(cb.value));
+  const selected = selectedIdx.map(i=>window._onboardArtists[i]);
+  if(!selected.length){ status.innerHTML='<div class="alert alert-warn">Select at least one artist.</div>'; return; }
+
+  status.innerHTML = '<div class="alert alert-info">Working… this can take a minute for a large list.</div>';
+  emailjs.init(s.publicKey);
+  let created=0, skipped=0, emailed=0, failed=0;
+  log.innerHTML='';
+  const addLog = (msg)=>{ log.innerHTML += esc(msg)+'<br>'; log.scrollTop = log.scrollHeight; };
+
+  for(const a of selected){
+    let uid = null;
+    try{
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, a.email, password);
+      uid = cred.user.uid;
+      await setDoc(doc(db,'users',uid), { uid, name:a.name, email:a.email, role:'artist', disabled:false, createdAt:nowStr() });
+      created++;
+      addLog('✓ Created login: '+a.name);
+    }catch(e){
+      if(e.code==='auth/email-already-in-use'){ skipped++; addLog('– Already has a login: '+a.name); }
+      else { failed++; addLog('✗ Login failed for '+a.name+': '+e.message); continue; }
+    }
+    try{
+      await emailjs.send(s.serviceId, templateId, {
+        to_email: a.email, artist_name: a.name, temp_password: password,
+        portal_url: window.location.origin + window.location.pathname
+      });
+      emailed++;
+    }catch(e){ addLog('✗ Email failed for '+a.name+': '+(e.text||e.message)); }
+  }
+  try{ await signOut(secondaryAuth); }catch(e){}
+  status.innerHTML = '<div class="alert alert-success">Done. '+created+' login(s) created, '+skipped+' already had one, '+emailed+' email(s) sent'+(failed?', '+failed+' failed':'')+'.</div>';
+};
 window.switchBehalfPanel = function(panel){
   document.getElementById('behalf-panel-list').style.display = panel==='list'?'':'none';
   document.getElementById('behalf-panel-onbehalf').style.display = panel==='onbehalf'?'':'none';
+  document.getElementById('behalf-panel-onboard').style.display = panel==='onboard'?'':'none';
   document.getElementById('behalf-subtab-list').className = 'btn btn-sm '+(panel==='list'?'btn-primary':'btn-secondary');
   document.getElementById('behalf-subtab-onbehalf').className = 'btn btn-sm '+(panel==='onbehalf'?'btn-primary':'btn-secondary');
+  document.getElementById('behalf-subtab-onboard').className = 'btn btn-sm '+(panel==='onboard'?'btn-primary':'btn-secondary');
+  if(panel==='onboard') loadOnboardPanel();
 };
 async function loadCurrentArtistsList(){
   const el = document.getElementById('current-artists-list');
