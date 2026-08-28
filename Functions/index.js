@@ -317,6 +317,83 @@ exports.buyerContactedAlerts = onDocumentCreated(
   }
 );
 
+// -----------------------------------------------------------
+// TRIGGER: Admin marks an invoice as paid -> email the artist
+// -----------------------------------------------------------
+exports.paymentConfirmedEmails = onDocumentCreated(
+  {
+    document: 'paymentEmails/{jobId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY],
+  },
+  async (event) => {
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const snap = event.data;
+    const job = snap.data();
+    const { artistEmail, artistName, pieceName, amountOwed, invoiceNumber, paidAt } = job;
+    if (!artistEmail) { console.warn('paymentEmails doc missing artistEmail — skipping', event.params.jobId); return; }
+
+    const msg = {
+      to: artistEmail,
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: `Payment sent — "${pieceName}"`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8"/>
+          <style>
+            body { font-family: Georgia, serif; background: #FAF7F2; margin: 0; padding: 0; }
+            .wrapper { max-width: 560px; margin: 40px auto; background: #FFFFFF; border: 1px solid #DDD8D0; }
+            .header { background: #FFFFFF; padding: 28px 40px; text-align: center; border-bottom: 1px solid #DDD8D0; }
+            .body { padding: 40px; color: #1C1C1C; font-size: 16px; line-height: 1.8; }
+            .body h2 { font-size: 26px; font-weight: normal; color: #D30180; margin-bottom: 8px; }
+            .body p { margin: 0 0 18px; }
+            .price-box { background: #FAF7F2; border: 1px solid #DDD8D0; border-radius: 4px; padding: 16px 20px; margin: 0 0 18px; font-size: 18px; color: #2a7a50; font-weight: bold; }
+            .cta { display: inline-block; background: #D30180; color: #FFFFFF !important; text-decoration: none; padding: 12px 28px; border-radius: 4px; font-family: sans-serif; font-size: 14px; font-weight: 700; }
+            .footer { padding: 24px 40px; border-top: 1px solid #DDD8D0; font-size: 12px; color: #9B9B9B; font-family: sans-serif; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="header">
+              <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" width="160" style="height:auto; max-width:160px; display:inline-block;" />
+            </div>
+            <div class="body">
+              <h2>Dear ${artistName || 'there'},</h2>
+              <p>Great news — your payment for <strong>${pieceName}</strong> has been sent.</p>
+              <div class="price-box">Amount paid: ${amountOwed}</div>
+              <p>Invoice reference: <strong>${invoiceNumber || ''}</strong>${paidAt ? ` &middot; Paid: ${paidAt}` : ''}</p>
+              <p>Please log in to the artist portal to view or print a copy of this invoice for your records.</p>
+              <p style="text-align:center;margin:28px 0"><a class="cta" href="https://submit.artforcure.org.uk/?tab=invoices" target="_blank">View My Invoices</a></p>
+              <p>Thank you for supporting Art for Cure with your wonderful work.</p>
+              <p>With warm wishes,<br/><strong>Art for Cure</strong></p>
+            </div>
+            <div class="footer">
+              Art for Cure &nbsp;|&nbsp; artforcure.org.uk<br/>
+              Registered Charity 1175161
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    };
+
+    try {
+      await sgMail.send(msg);
+      console.log(`Payment-confirmed email sent to ${artistEmail} for "${pieceName}"`);
+    } catch (err) {
+      console.error('SendGrid error (payment confirmed email):', err.response ? err.response.body : err);
+    }
+
+    try {
+      await snap.ref.update({ status: 'sent', sentAt: new Date() });
+    } catch (err) {
+      console.error(`Firestore status update failed for paymentEmails/${event.params.jobId}:`, err.message);
+    }
+  }
+);
+
 // ---------------------------------------------------
 // SCHEDULED: Check Shopify for new sales twice daily (12:00 and 22:00 UK time)
 // ---------------------------------------------------

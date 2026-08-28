@@ -1614,10 +1614,24 @@ window.lookupInvoices = async function(presetEmail){
 
 window.markInvoicePaid = async function(invoiceId){
   if(!confirm('Confirm payment has been made to the artist for this invoice?')) return;
+  const paidAt = nowStr();
   try{
-    await updateDoc(doc(db,'invoices',invoiceId), { status:'paid', paidAt: nowStr() });
-    loadAllInvoices();
-  }catch(e){ alert('Error: '+e.message); }
+    await updateDoc(doc(db,'invoices',invoiceId), { status:'paid', paidAt });
+  }catch(e){ alert('Error: '+e.message); return; }
+  // Let the artist know their payment has gone out. Queued as a separate job so a hiccup
+  // here can never undo or block the payment status update above.
+  try{
+    const inv = _invoiceCache[invoiceId];
+    if(inv && inv.artistEmail){
+      await addDoc(collection(db,'paymentEmails'), {
+        artistEmail: inv.artistEmail, artistName: inv.artistName||'',
+        pieceName: inv.pieceName||'', amountOwed: fmt(inv.amountOwed),
+        invoiceNumber: inv.invoiceNumber||'', paidAt,
+        createdAt: serverTimestamp(), status: 'pending'
+      });
+    }
+  }catch(e){ console.warn('Could not queue payment-confirmed email:', e); }
+  loadAllInvoices();
 };
 
 
