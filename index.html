@@ -378,7 +378,7 @@ window.closeMobileMenu = function(){
   const ov=document.getElementById('mobile-menu-overlay'); if(ov)ov.classList.remove('visible');
 };
 
-wwindow.showTab = function(tab) {
+window.showTab = function(tab) {
   closeMobileMenu();
   ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
