@@ -2558,7 +2558,7 @@ onAuthStateChanged(auth, async (user) => {
   if(user) {
     _currentUser = user;
     _isAdmin = await checkAdminRole(user.uid);
-    try { await updateDoc(doc(db,'users',user.uid), { lastLoginAt: nowStr() }); } catch(e) { /* ignore — doc may not exist yet */ }
+     try { await updateDoc(doc(db,'users',user.uid), { lastLoginAt: nowStr() }); } catch(e) { console.warn('Could not record login timestamp (check Firestore rules for users collection):', e.message); }
 
     // Show app, hide login
     document.getElementById('login-screen').style.display='none';
