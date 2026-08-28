@@ -395,11 +395,21 @@ window.showTab = function(tab) {
 window.adminEditSubmission = function(id){
   const sub=_adminSubs.find(s=>s.id===id); if(!sub)return;
   window._adminEditSub=sub;
+  window._adminEditContainerId='view-admin';
+  window._adminEditReturn=function(){ renderAdmin(); };
+  renderAdminEditForm(sub);
+};
+
+window.adminEditFromArtistView = function(id){
+  const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
+  window._adminEditSub=sub;
+  window._adminEditContainerId='artist-details';
+  window._adminEditReturn=function(){ lookupArtist(sub.artist.email); };
   renderAdminEditForm(sub);
 };
 
 function renderAdminEditForm(sub){
-  const el=document.getElementById('view-admin');
+  const el=document.getElementById(window._adminEditContainerId||'view-admin');
   const p=sub.piece, isOneOff=p.edition==='One Off', cat3D=is3D(sub.category), cat2D=is2D(sub.category);
   el.innerHTML=`
     ${sub.shopifyId?'<div class="alert alert-warn">This piece is already live on Shopify — saving here updates the portal record only and will NOT sync to the live Shopify listing. Update Shopify separately if the live listing also needs to change.</div>':''}
@@ -443,7 +453,7 @@ window.selectAdminEditEdition=function(ed){
   document.querySelectorAll('#view-admin .type-btn').forEach(b=>{if(['One Off','Limited Edition','Open Edition'].includes(b.textContent.trim()))b.classList.toggle('selected',b.textContent.trim()===ed);});
   const ef=document.getElementById('admin-edit-edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':'';
 };
-window.cancelAdminEdit=function(){ renderAdmin(); };
+window.cancelAdminEdit=function(){ (window._adminEditReturn||renderAdmin)(); };
 window.saveAdminEdit=async function(id){
   const sub=window._adminEditSub, btn=document.getElementById('admin-save-edit-btn');
   btn.disabled=true; btn.textContent='Saving…';
@@ -465,9 +475,11 @@ window.saveAdminEdit=async function(id){
   const now=nowStr(), newLog=[...(sub.auditLog||[]),{ts:now,by:'Admin',note:'Submission edited by admin'}];
   try{
     await updateDoc(doc(db,'submissions',id),{piece:newPiece,auditLog:newLog});
-    const updated={...sub,piece:newPiece,auditLog:newLog};
-    _adminSubs=_adminSubs.map(s=>s.id===id?updated:s);
-    renderAdmin();
+    if(window._adminEditContainerId==='view-admin'){
+      const updated={...sub,piece:newPiece,auditLog:newLog};
+      _adminSubs=_adminSubs.map(s=>s.id===id?updated:s);
+    }
+    (window._adminEditReturn||renderAdmin)();
   }catch(err){alert('Error saving: '+err.message);btn.disabled=false;btn.textContent='Save Changes';}
 };
 
@@ -1508,13 +1520,23 @@ function renderArtistDetails(subs){
       </div>
       ${imgHtml}
       <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
-                ${!sub.shopifyId?`<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`:`<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`}
+               ${_isAdmin
+          ? `<button class="btn btn-secondary btn-sm" onclick="adminEditFromArtistView('${sub.id}')">✎ Edit as Admin</button>`
+          : (!sub.shopifyId
+              ? `<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`)
+        }
         ${sub.status!=='withdrawn'&&sub.status!=='rejected'?`<button class="btn btn-danger btn-sm" onclick="withdrawSubmission('${sub.id}')">Withdraw</button>`:''}
       </div>
       ${al?`<div class="audit-log" style="margin-top:1rem"><div class="audit-title">History</div>${al}</div>`:''}
     </div>`;
   }).join('');
   window._artistSubs=subs;
+  if(_isAdmin && subs.length){
+    const uniqueEmails=new Set(subs.map(s=>s.artist?.email));
+    const titleEl=document.querySelector('#view-artist .page-title');
+    if(titleEl) titleEl.textContent = uniqueEmails.size===1 ? (subs[0].artist?.name||'Artist Submissions') : 'Search Results';
+  }
 }
 window.editSubmission=function(id){
   const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
