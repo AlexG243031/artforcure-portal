@@ -420,7 +420,7 @@ function renderAdminEditForm(sub){
         <div class="field"><label>Price</label><input id="aep-price" type="number" value="${esc(p.price)}"/></div>
       </div>
       <div class="form-row">
-        <div class="field"><label>Medium</label><input id="aep-medium" value="${esc(p.medium)}"/></div>
+        <div class="field"><label>${sub.category==='Print'?'Type of Print':sub.category==='Ceramic'?'Material':'Medium'}</label><input id="aep-medium" value="${esc(p.medium)}" placeholder="${sub.category==='Print'?'linocut':sub.category==='Ceramic'?'Porcelain':''}"/></div>
         <div class="field"><label>Dimensions (cm)</label><input id="aep-dims" value="${esc(p.dimensions)}"/></div>
       </div>
       ${cat3D?`<div class="form-row">
@@ -428,8 +428,12 @@ function renderAdminEditForm(sub){
         <div class="field"><label>Plinth</label><select id="aep-plinths"><option value="">Select…</option>
           ${['Included','Sold separately','No plinth'].map(o=>`<option ${p.plinths===o?'selected':''}>${o}</option>`).join('')}</select></div></div>`:''}
       ${cat2D?`<div class="form-row">
-        <div class="field"><label>Framing</label><select id="aep-framed">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="field"><label>Frame Description</label><input id="aep-frameDesc" value="${esc(p.frameDesc)}"/></div></div>`:''}
+        <div class="field"><label>Framing</label><select id="aep-framed" onchange="toggleAdminGlazed(this.value)">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field"><label>Description of Frame</label><input id="aep-frameDesc" value="${esc(p.frameDesc)}"/></div>
+      </div>
+      <div class="form-row" id="aep-glazed-wrap" ${p.framed!=='Framed'?'style="display:none"':''}>
+        <div class="field"><label>Glazing</label><select id="aep-glazed">${['Glazed','Unglazed'].map(o=>`<option ${p.glazed===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      </div>`:''}
       <div class="divider"></div>
       <div class="card-title" style="border-bottom:none;padding-bottom:0;margin-bottom:.75rem"><span class="pink-dot"></span> Edition</div>
       <div class="type-selector">${['One Off','Limited Edition','Open Edition'].map(e=>`<div class="type-btn ${p.edition===e?'selected':''}" onclick="selectAdminEditEdition('${e}')">${e}</div>`).join('')}</div>
@@ -453,6 +457,7 @@ window.selectAdminEditEdition=function(ed){
   document.querySelectorAll('#view-admin .type-btn').forEach(b=>{if(['One Off','Limited Edition','Open Edition'].includes(b.textContent.trim()))b.classList.toggle('selected',b.textContent.trim()===ed);});
   const ef=document.getElementById('admin-edit-edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':'';
 };
+window.toggleAdminGlazed=function(val){ const g=document.getElementById('aep-glazed-wrap'); if(g)g.style.display=val==='Framed'?'':'none'; };
 window.cancelAdminEdit=function(){ (window._adminEditReturn||renderAdmin)(); };
 window.saveAdminEdit=async function(id){
   const sub=window._adminEditSub, btn=document.getElementById('admin-save-edit-btn');
@@ -466,6 +471,7 @@ window.saveAdminEdit=async function(id){
     plinths:(document.getElementById('aep-plinths')||{}).value||sub.piece.plinths||'',
     framed: is2D(sub.category) ? ((document.getElementById('aep-framed')||{}).value||sub.piece.framed||'Unframed') : '',
     frameDesc: is2D(sub.category) ? ((document.getElementById('aep-frameDesc')||{}).value||sub.piece.frameDesc||'') : '',
+    glazed: (is2D(sub.category) && (document.getElementById('aep-framed')||{}).value==='Framed') ? ((document.getElementById('aep-glazed')||{}).value||sub.piece.glazed||'') : '',
     edition:window._adminEditEdition||sub.piece.edition,
     editionNum:(document.getElementById('aep-edNum')||{}).value||'',
     numDelivered:(document.getElementById('aep-delivered')||{}).value||'',
@@ -875,7 +881,7 @@ async function saveArtistProfile(artist){
 // ─────────────────────────────────────────
 function defaultState(){
   return{step:1,artist:{name:'',email:'',mobile:'',website:'',bio:'',photoUrl:''},profileFound:false,category:'',
-    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}};
+    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:'',glazed:''}};
 }
 
 async function bootSubmitTab(email){
@@ -988,7 +994,7 @@ function renderSubmit(state){
         </div>
       </div>
       <div class="form-row">
-        <div class="field"><label>Medium <span class="req">*</span></label><input id="p-medium" value="${esc(piece.medium)}" placeholder="${cat3D?'e.g. Bronze':'e.g. Oil on canvas'}"/></div>
+        <div class="field"><label>${category==='Print'?'Type of Print':category==='Ceramic'?'Material':'Medium'} <span class="req">*</span></label><input id="p-medium" value="${esc(piece.medium)}" placeholder="${category==='Print'?'linocut':category==='Ceramic'?'Porcelain':(cat3D?'e.g. Bronze':'e.g. Oil on canvas')}"/></div>
         <div class="field"><label>Dimensions (cm) <span class="req">*</span></label><input id="p-dims" value="${esc(piece.dimensions)}" placeholder="H × W${cat3D?' × D':''}"/></div>
       </div>
       ${cat3D?`<div class="form-row">
@@ -1001,8 +1007,14 @@ function renderSubmit(state){
           ${['Framed','Unframed'].map(o=>`<option ${piece.framed===o?'selected':''}>${o}</option>`).join('')}
         </select></div>
         <div class="field" id="frame-desc-wrap" ${piece.framed!=='Framed'?'style="display:none"':''}>
-          <label>Frame Description</label><input id="p-frameDesc" value="${esc(piece.frameDesc)}" placeholder="e.g. White wooden float frame"/>
-        </div></div>`:''}
+          <label>Description of Frame</label><input id="p-frameDesc" value="${esc(piece.frameDesc)}" placeholder="e.g. White wooden float frame"/>
+        </div>
+      </div>
+      <div class="form-row" id="glazed-wrap" ${piece.framed!=='Framed'?'style="display:none"':''}>
+        <div class="field"><label>Glazing</label><select id="p-glazed">
+          ${['Glazed','Unglazed'].map(o=>`<option ${piece.glazed===o?'selected':''}>${o}</option>`).join('')}
+        </select></div>
+      </div>`:''}
       <div class="divider"></div>
       <div class="card-title" style="border-bottom:none;padding-bottom:0;margin-bottom:.75rem"><span class="pink-dot"></span> Edition &amp; Availability</div>
       <div class="type-selector">
@@ -1061,7 +1073,10 @@ window.clearProfile = function(){ const s=window._submitState; s.artist={name:''
 window.updateWordCount = function(el){ const c=wc(el.value), d=document.getElementById('wc-display'); if(d){d.textContent=c+'/500 words';d.className='word-count'+(c>500?' over':'');} };
 window.selectCategory = function(cat){ window._submitState.category=cat; document.querySelectorAll('#s2 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent===cat)); setTimeout(()=>{ window._submitState.step=3; renderSubmit(window._submitState); }, 300); };
 window.selectEdition = function(ed){ window._submitState.piece.edition=ed; document.querySelectorAll('#s3 .type-btn').forEach(b=>b.classList.toggle('selected',b.textContent.trim()===ed)); const ef=document.getElementById('edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':''; };
-window.toggleFrameDesc = function(val){ const w=document.getElementById('frame-desc-wrap'); if(w)w.style.display=val==='Framed'?'':'none'; };
+window.toggleFrameDesc = function(val){
+  const w=document.getElementById('frame-desc-wrap'); if(w)w.style.display=val==='Framed'?'':'none';
+  const g=document.getElementById('glazed-wrap'); if(g)g.style.display=val==='Framed'?'':'none';
+};
 window.goStep = function(n){ window._submitState.step=n; renderSubmit(window._submitState); };
 window.handleArtistPhoto = async function(file) {
   if(!file) return;
@@ -1126,6 +1141,7 @@ window.doSubmit = async function(){
     plinths:(document.getElementById('p-plinths')||{}).value||'',
     framed: is2D(s.category) ? ((document.getElementById('p-framed')||{}).value||'Unframed') : '',
     frameDesc: is2D(s.category) ? ((document.getElementById('p-frameDesc')||{}).value||'') : '',
+    glazed: (is2D(s.category) && (document.getElementById('p-framed')||{}).value==='Framed') ? ((document.getElementById('p-glazed')||{}).value||'') : '',
     edition:s.piece.edition||'One Off',
     editionNum:(document.getElementById('p-edNum')||{}).value||'',
     numDelivered:(document.getElementById('p-delivered')||{}).value||'',
@@ -1176,7 +1192,7 @@ window.submitAnother = function(){
   const s=window._submitState;
   window._pendingImages=[];
   renderSubmit({step:2,artist:s.artist,profileFound:true,category:'',
-    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:''}});
+    piece:{name:'',price:'',medium:'',edition:'One Off',editionNum:'',numDelivered:'',numOrder:'',leadTime:'',dimensions:'',weight:'',plinths:'',framed:'',frameDesc:'',glazed:''}});
 };
 
 // ─────────────────────────────────────────
@@ -1511,11 +1527,12 @@ function renderArtistDetails(subs){
       </div>
       <div class="detail-grid">
         <div><div class="detail-label">Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(sub.piece.price)}</div></div>
-        <div><div class="detail-label">Medium</div><div class="detail-value">${esc(sub.piece.medium||'—')}</div></div>
+        <div><div class="detail-label">${sub.category==='Print'?'Type of Print':sub.category==='Ceramic'?'Material':'Medium'}</div><div class="detail-value">${esc(sub.piece.medium||'—')}</div></div>
         <div><div class="detail-label">Dimensions</div><div class="detail-value">${esc(sub.piece.dimensions||'—')}</div></div>
         <div><div class="detail-label">Edition</div><div class="detail-value">${sub.piece.edition}${sub.piece.editionNum?' ('+esc(sub.piece.editionNum)+')':''}</div></div>
         ${is3D(sub.category)&&sub.piece.plinths?`<div><div class="detail-label">Plinth</div><div class="detail-value">${esc(sub.piece.plinths)}</div></div>`:''}
         ${is2D(sub.category)?`<div><div class="detail-label">Framing</div><div class="detail-value">${sub.piece.framed}</div></div>`:''}
+        ${is2D(sub.category)&&sub.piece.framed==='Framed'&&sub.piece.glazed?`<div><div class="detail-label">Glazing</div><div class="detail-value">${esc(sub.piece.glazed)}</div></div>`:''}
         <div><div class="detail-label">Submitted</div><div class="detail-value">${sub.submittedAt}</div></div>
       </div>
       ${imgHtml}
@@ -1655,7 +1672,7 @@ function renderEditForm(sub){
         <div class="field"><label>Price</label><input id="ep-price" type="number" value="${esc(p.price)}"/></div>
       </div>
       <div class="form-row">
-        <div class="field"><label>Medium</label><input id="ep-medium" value="${esc(p.medium)}"/></div>
+        <div class="field"><label>${sub.category==='Print'?'Type of Print':sub.category==='Ceramic'?'Material':'Medium'}</label><input id="ep-medium" value="${esc(p.medium)}" placeholder="${sub.category==='Print'?'linocut':sub.category==='Ceramic'?'Porcelain':''}"/></div>
         <div class="field"><label>Dimensions (cm)</label><input id="ep-dims" value="${esc(p.dimensions)}"/></div>
       </div>
       ${cat3D?`<div class="form-row">
@@ -1663,8 +1680,12 @@ function renderEditForm(sub){
         <div class="field"><label>Plinth</label><select id="ep-plinths"><option value="">Select…</option>
           ${['Included','Sold separately','No plinth'].map(o=>`<option ${p.plinths===o?'selected':''}>${o}</option>`).join('')}</select></div></div>`:''}
       ${cat2D?`<div class="form-row">
-        <div class="field"><label>Framing</label><select id="ep-framed">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
-        <div class="field"><label>Frame Description</label><input id="ep-frameDesc" value="${esc(p.frameDesc)}"/></div></div>`:''}
+        <div class="field"><label>Framing</label><select id="ep-framed" onchange="toggleEditGlazed(this.value)">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field"><label>Description of Frame</label><input id="ep-frameDesc" value="${esc(p.frameDesc)}"/></div>
+      </div>
+      <div class="form-row" id="ep-glazed-wrap" ${p.framed!=='Framed'?'style="display:none"':''}>
+        <div class="field"><label>Glazing</label><select id="ep-glazed">${['Glazed','Unglazed'].map(o=>`<option ${p.glazed===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      </div>`:''}
       <div class="divider"></div>
       <div class="card-title" style="border-bottom:none;padding-bottom:0;margin-bottom:.75rem"><span class="pink-dot"></span> Edition</div>
       <div class="type-selector">${['One Off','Limited Edition','Open Edition'].map(e=>`<div class="type-btn ${p.edition===e?'selected':''}" onclick="selectEditEdition('${e}')">${e}</div>`).join('')}</div>
@@ -1726,6 +1747,7 @@ window.selectEditEdition=function(ed){
   document.querySelectorAll('.type-btn').forEach(b=>{if(['One Off','Limited Edition','Open Edition'].includes(b.textContent.trim()))b.classList.toggle('selected',b.textContent.trim()===ed);});
   const ef=document.getElementById('edit-edition-fields'); if(ef)ef.style.display=ed==='One Off'?'none':'';
 };
+window.toggleEditGlazed=function(val){ const g=document.getElementById('ep-glazed-wrap'); if(g)g.style.display=val==='Framed'?'':'none'; };
 window.cancelEdit=function(){if(window._artistSubs)renderArtistDetails(window._artistSubs);};
 window.saveEdit=async function(id){
   const sub=window._editSub, btn=document.getElementById('save-edit-btn');
@@ -1739,6 +1761,7 @@ window.saveEdit=async function(id){
     plinths:(document.getElementById('ep-plinths')||{}).value||sub.piece.plinths||'',
     framed: is2D(sub.category) ? ((document.getElementById('ep-framed')||{}).value||sub.piece.framed||'Unframed') : '',
     frameDesc: is2D(sub.category) ? ((document.getElementById('ep-frameDesc')||{}).value||sub.piece.frameDesc||'') : '',
+    glazed: (is2D(sub.category) && (document.getElementById('ep-framed')||{}).value==='Framed') ? ((document.getElementById('ep-glazed')||{}).value||sub.piece.glazed||'') : '',
     edition:window._editEdition||sub.piece.edition,
     editionNum:(document.getElementById('ep-edNum')||{}).value||'',
     numDelivered:(document.getElementById('ep-delivered')||{}).value||'',
@@ -1845,7 +1868,7 @@ function renderAdmin(){
           <div><div class="detail-label">Email</div><div class="detail-value">${esc(sub.artist.email)}</div></div>
           <div><div class="detail-label">Mobile</div><div class="detail-value">${esc(sub.artist.mobile||'—')}</div></div>
           <div><div class="detail-label">Website</div><div class="detail-value">${sub.artist.website?`<a href="${esc(sub.artist.website)}" target="_blank">${esc(sub.artist.website)}</a>`:'—'}</div></div>
-          <div><div class="detail-label">Medium</div><div class="detail-value">${esc(sub.piece.medium||'—')}</div></div>
+          <div><div class="detail-label">${sub.category==='Print'?'Type of Print':sub.category==='Ceramic'?'Material':'Medium'}</div><div class="detail-value">${esc(sub.piece.medium||'—')}</div></div>
           <div><div class="detail-label">Dimensions</div><div class="detail-value">${esc(sub.piece.dimensions||'—')}</div></div>
           <div><div class="detail-label">Edition</div><div class="detail-value">${sub.piece.edition}${sub.piece.editionNum?' ('+esc(sub.piece.editionNum)+')':''}</div></div>
           ${sub.piece.edition!=='One Off'?`
@@ -1856,6 +1879,7 @@ function renderAdmin(){
           ${is3D(sub.category)&&sub.piece.weight?`<div><div class="detail-label">Weight</div><div class="detail-value">${esc(sub.piece.weight)}g</div></div>`:''}
           ${is2D(sub.category)?`<div><div class="detail-label">Framing</div><div class="detail-value">${sub.piece.framed}</div></div>`:''}
           ${is2D(sub.category)&&sub.piece.frameDesc?`<div><div class="detail-label">Frame</div><div class="detail-value">${esc(sub.piece.frameDesc)}</div></div>`:''}
+          ${is2D(sub.category)&&sub.piece.glazed?`<div><div class="detail-label">Glazing</div><div class="detail-value">${esc(sub.piece.glazed)}</div></div>`:''}
         </div>
         ${sub.artist.bio?`<div style="margin-bottom:1rem"><div class="detail-label">Artist Bio</div><div class="detail-value" style="font-size:13px;line-height:1.6;margin-top:4px">${esc(sub.artist.bio)}</div></div>`:''}
         ${imgGrid}
@@ -2425,6 +2449,7 @@ async function pushToSheets(sub) {
     plinths: sub.piece.plinths||'',
     framed: is2D(sub.category) ? (sub.piece.framed||'') : '',
     frame_desc: sub.piece.frameDesc||'',
+    glazed: sub.piece.glazed||'',
     status: sub.status||'',
     image_count: (sub.images||[]).length,
     image_urls: (sub.images||[]).map(i=>i.url).join(' | '),
@@ -2461,7 +2486,7 @@ async function pushToShopify(sub) {
     sub.piece.weight ? '<p><strong>Weight:</strong> '+sub.piece.weight+'g</p>' : '',
     sub.piece.edition !== 'One Off' ? '<p><strong>Edition:</strong> '+sub.piece.edition+(sub.piece.editionNum?' — '+sub.piece.editionNum:'')+'</p>' : '<p><strong>Edition:</strong> One Off</p>',
     sub.piece.plinths ? '<p><strong>Plinth:</strong> '+sub.piece.plinths+'</p>' : '',
-    is2D(sub.category) && sub.piece.framed ? '<p><strong>Framing:</strong> '+sub.piece.framed+(sub.piece.frameDesc?' — '+sub.piece.frameDesc:'')+'</p>' : '',
+    is2D(sub.category) && sub.piece.framed ? '<p><strong>Framing:</strong> '+sub.piece.framed+(sub.piece.frameDesc?' — '+sub.piece.frameDesc:'')+(sub.piece.glazed?' ('+sub.piece.glazed+')':'')+'</p>' : '',
   ].filter(Boolean).join(' ');
 
   const product = {
@@ -2847,7 +2872,7 @@ window.runShopifyImport = async function(artistEmailMap){
       try{
         await addDoc(collection(db,'submissions'), {
           artist:{ name:col.title, email, mobile:'', website:'', bio:'', photoUrl:'' },
-          category, piece:{ name:p.title, price, medium:'', dimensions:'', edition:'One Off', editionNum:'', numDelivered:'', numOrder:'', leadTime:'', weight:'', plinths:'', framed:'', frameDesc:'' },
+          category, piece:{ name:p.title, price, medium:'', dimensions:'', edition:'One Off', editionNum:'', numDelivered:'', numOrder:'', leadTime:'', weight:'', plinths:'', framed:'', frameDesc:'', glazed:'' },
           status:'approved', commission:comm, submittedAt:now, shopifyId:String(p.id), images,
           auditLog:[{ts:now, by:'Admin', note:'Imported from existing Shopify listing ('+col.title+')'}],
           createdAt: serverTimestamp()
