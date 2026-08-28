@@ -431,7 +431,7 @@ function renderAdminEditForm(sub){
         <div class="field"><label>Framing</label><select id="aep-framed" onchange="toggleAdminGlazed(this.value)">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="field"><label>Description of Frame</label><input id="aep-frameDesc" value="${esc(p.frameDesc)}"/></div>
       </div>
-      <div class="form-row" id="aep-glazed-wrap" ${p.framed!=='Framed'?'style="display:none"':''}>
+      <div class="form-row" id="aep-glazed-wrap" ${p.framed==='Unframed'?'style="display:none"':''}>
         <div class="field"><label>Glazing</label><select id="aep-glazed">${['Glazed','Unglazed'].map(o=>`<option ${p.glazed===o?'selected':''}>${o}</option>`).join('')}</select></div>
       </div>`:''}
       <div class="divider"></div>
@@ -1006,11 +1006,11 @@ function renderSubmit(state){
         <div class="field"><label>Framing</label><select id="p-framed" onchange="toggleFrameDesc(this.value)">
           ${['Framed','Unframed'].map(o=>`<option ${piece.framed===o?'selected':''}>${o}</option>`).join('')}
         </select></div>
-        <div class="field" id="frame-desc-wrap" ${piece.framed!=='Framed'?'style="display:none"':''}>
+        <div class="field" id="frame-desc-wrap" ${piece.framed==='Unframed'?'style="display:none"':''}>
           <label>Description of Frame</label><input id="p-frameDesc" value="${esc(piece.frameDesc)}" placeholder="e.g. White wooden float frame"/>
         </div>
       </div>
-      <div class="form-row" id="glazed-wrap" ${piece.framed!=='Framed'?'style="display:none"':''}>
+      <div class="form-row" id="glazed-wrap" ${piece.framed==='Unframed'?'style="display:none"':''}>
         <div class="field"><label>Glazing</label><select id="p-glazed">
           ${['Glazed','Unglazed'].map(o=>`<option ${piece.glazed===o?'selected':''}>${o}</option>`).join('')}
         </select></div>
@@ -1707,7 +1707,7 @@ function renderEditForm(sub){
         <div class="field"><label>Framing</label><select id="ep-framed" onchange="toggleEditGlazed(this.value)">${['Framed','Unframed'].map(o=>`<option ${p.framed===o?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="field"><label>Description of Frame</label><input id="ep-frameDesc" value="${esc(p.frameDesc)}"/></div>
       </div>
-      <div class="form-row" id="ep-glazed-wrap" ${p.framed!=='Framed'?'style="display:none"':''}>
+      <div class="form-row" id="ep-glazed-wrap" ${p.framed==='Unframed'?'style="display:none"':''}>
         <div class="field"><label>Glazing</label><select id="ep-glazed">${['Glazed','Unglazed'].map(o=>`<option ${p.glazed===o?'selected':''}>${o}</option>`).join('')}</select></div>
       </div>`:''}
       <div class="divider"></div>
@@ -2670,7 +2670,8 @@ onAuthStateChanged(auth, async (user) => {
     if(_isAdmin && deepLinkTab==='invoices'){
       renderInvoicesPortal(null, deepLinkInvoice);
       showTab('invoices');
-    } else if(!_isAdmin) showTab('submit');
+    } else if(!_isAdmin && deepLinkTab==='sales') showTab('sales');
+    else if(!_isAdmin) showTab('submit');
     else showTab('admin');
 
   } else {
