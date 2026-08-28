@@ -229,9 +229,19 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 .btn-email:hover { background:#1558c0; }
 .archive-btn { background:none; border:1px solid var(--gray-border); color:var(--gray-text); font-size:12px; padding:5px 12px; border-radius:6px; cursor:pointer; font-family:var(--font); }
 .archive-btn:hover { border-color:var(--pink-mid); color:var(--pink-dark); }
+
+/* Printable invoice — hidden on screen, shown (and shown exclusively) when printing */
+#print-invoice-area { display:none; }
+@media print {
+  body * { visibility:hidden; }
+  #print-invoice-area, #print-invoice-area * { visibility:visible; }
+  #print-invoice-area { display:block; position:absolute; top:0; left:0; width:100%; }
+}
 </style>
 </head>
 <body>
+
+<div id="print-invoice-area"></div>
 
 <!-- Login screen -->
 <div id="login-screen" style="display:none;">
@@ -301,7 +311,7 @@ window.addEventListener('unhandledrejection', e => {
     +'</div>');
 });
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, doc, updateDoc, setDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, doc, updateDoc, setDoc, query, where, orderBy, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
@@ -1404,11 +1414,20 @@ async function finalizeFulfillment(sale){
   const price=parseFloat(sale.salePrice)||0;
   const amountOwed = price*((100-commPct)/100);
   const afcCommission = price-amountOwed;
+  // Snapshot the artist's bank details onto the invoice at the moment it's raised, so the
+  // record (and the AFC notification email) always show what was on file when payment is due,
+  // even if the artist's profile bank details change later.
+  let bankDetails = {accountName:'', sortCode:'', accountNumber:''};
+  try{
+    const profile = await lookupArtistProfile(sale.artistEmail);
+    if(profile && profile.bankDetails) bankDetails = profile.bankDetails;
+  }catch(e){ console.warn('Could not load bank details for invoice:', e); }
+  const invoiceNumber = await getNextInvoiceNumber();
   const invoice = {
-    date: now, artistName: sale.artistName||'', artistEmail: sale.artistEmail||'',
+    invoiceNumber, date: now, artistName: sale.artistName||'', artistEmail: sale.artistEmail||'',
     pieceName: sale.pieceName||'', buyerName: sale.buyerName||'', price, commissionPct: commPct,
     afcCommission, amountOwed, saleId: sale.id, submissionId: sale.submissionId||'',
-    status: 'unpaid', createdAt: serverTimestamp()
+    bankDetails, status: 'unpaid', createdAt: serverTimestamp()
   };
   const invRef = await addDoc(collection(db,'invoices'), invoice);
   const invoiceLink = window.location.origin + window.location.pathname + '?tab=invoices&invoice=' + invRef.id;
@@ -1440,12 +1459,34 @@ async function sendInvoiceEmail(invoice, invoiceLink){
         price: fmt(invoice.price),
         afc_commission: fmt(invoice.afcCommission),
         amount_owed: fmt(invoice.amountOwed),
+        account_name: (invoice.bankDetails && invoice.bankDetails.accountName) || '',
+        sort_code: (invoice.bankDetails && invoice.bankDetails.sortCode) || '',
+        account_number: (invoice.bankDetails && invoice.bankDetails.accountNumber) || '',
+        invoice_number: invoice.invoiceNumber || '',
       });
     }
   }catch(e){ console.warn('Invoice email failed:',e); }
 }
 
-let _invoiceFilter='unpaid', _allInvoices=[], _highlightInvoiceId=null;
+let _invoiceFilter='unpaid', _allInvoices=[], _highlightInvoiceId=null, _invoiceCache={};
+
+// Atomically hands out the next sequential invoice reference, e.g. AFC-INV-00007,
+// via a Firestore transaction against a single shared counter document.
+async function getNextInvoiceNumber(){
+  const counterRef = doc(db,'counters','invoices');
+  try{
+    const next = await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(counterRef);
+      const n = (snap.exists() ? (snap.data().seq||0) : 0) + 1;
+      tx.set(counterRef, { seq: n }, { merge:true });
+      return n;
+    });
+    return 'AFC-INV-' + String(next).padStart(5,'0');
+  }catch(e){
+    console.warn('Could not generate a sequential invoice number, falling back to a timestamp-based one:', e);
+    return 'AFC-INV-' + Date.now();
+  }
+}
 
 function renderInvoicesPortal(artistEmail, highlightId){
   if(highlightId) _highlightInvoiceId = highlightId;
@@ -1477,6 +1518,7 @@ window.setInvoiceFilter = function(f){ _invoiceFilter=f; renderInvoiceList(_allI
 
 function renderInvoiceList(invs, showFilters){
   const el=document.getElementById('invoices-details');
+  invs.forEach(i=>{ _invoiceCache[i.id]=i; });
   const counts={all:invs.length,unpaid:invs.filter(i=>i.status!=='paid').length,paid:invs.filter(i=>i.status==='paid').length};
   const filtered = showFilters ? (_invoiceFilter==='all' ? invs : invs.filter(i=>(_invoiceFilter==='paid')===(i.status==='paid'))) : invs;
   let html='';
@@ -1494,6 +1536,7 @@ function renderInvoiceList(invs, showFilters){
         <div>
           <div class="sub-artist">${esc(inv.pieceName||'')}</div>
           <div class="sub-piece">${_isAdmin?esc(inv.artistName||'')+' &middot; ':''}Sold to ${esc(inv.buyerName||'')} &middot; ${esc(inv.date||'')}</div>
+          ${inv.invoiceNumber?`<div style="font-size:11px;color:var(--gray-text);margin-top:2px">Invoice ${esc(inv.invoiceNumber)}</div>`:''}
         </div>
         <span class="badge ${isPaid?'badge-approved':'badge-pending'}">${isPaid?'Paid':'Awaiting Payment'}</span>
       </div>
@@ -1503,7 +1546,15 @@ function renderInvoiceList(invs, showFilters){
         <div><div class="detail-label">Amount Owed to Artist</div><div class="detail-value" style="font-weight:700;color:var(--success)">${fmt(inv.amountOwed)}</div></div>
         ${isPaid&&inv.paidAt?`<div><div class="detail-label">Paid</div><div class="detail-value">${esc(inv.paidAt)}</div></div>`:''}
       </div>
-      ${_isAdmin&&!isPaid?`<div style="margin-top:1rem"><button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button></div>`:''}
+      ${_isAdmin&&inv.bankDetails&&inv.bankDetails.accountNumber?`<div class="detail-grid" style="margin-top:0.5rem">
+        <div><div class="detail-label">Account Name</div><div class="detail-value">${esc(inv.bankDetails.accountName||'')}</div></div>
+        <div><div class="detail-label">Sort Code</div><div class="detail-value">${esc(inv.bankDetails.sortCode||'')}</div></div>
+        <div><div class="detail-label">Account Number</div><div class="detail-value">${esc(inv.bankDetails.accountNumber||'')}</div></div>
+      </div>`:_isAdmin?`<div class="alert alert-warn" style="margin-top:0.5rem;font-size:12px">No bank details on file for this artist yet.</div>`:''}
+      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="printInvoice('${inv.id}')">🖨️ Print</button>
+        ${_isAdmin&&!isPaid?`<button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button>`:''}
+      </div>
     </div>`;
   }).join('');
   el.innerHTML=html;
@@ -1512,6 +1563,42 @@ function renderInvoiceList(invs, showFilters){
     _highlightInvoiceId=null;
   }
 }
+
+window.printInvoice = function(invoiceId){
+  const inv = _invoiceCache[invoiceId];
+  if(!inv){ alert('Could not find that invoice — please refresh the page and try again.'); return; }
+  const area = document.getElementById('print-invoice-area');
+  const showBank = inv.bankDetails && inv.bankDetails.accountNumber;
+  area.innerHTML = `
+    <div style="max-width:640px;margin:0 auto;font-family:Georgia,serif;color:#1C1C1C;padding:24px">
+      <div style="text-align:center;margin-bottom:24px">
+        <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" style="height:60px"/>
+      </div>
+      <h1 style="font-size:22px;font-weight:normal;color:#D30180;text-align:center;margin-bottom:4px">Sale Invoice</h1>
+      <p style="text-align:center;color:#666;margin-top:0;margin-bottom:24px">Reference: <strong>${esc(inv.invoiceNumber||inv.id)}</strong></p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <tr><td style="padding:6px 0;color:#666">Invoice Date</td><td style="padding:6px 0;text-align:right">${esc(inv.date||'')}</td></tr>
+        <tr><td style="padding:6px 0;color:#666">Artist</td><td style="padding:6px 0;text-align:right">${esc(inv.artistName||'')}</td></tr>
+        <tr><td style="padding:6px 0;color:#666">Piece</td><td style="padding:6px 0;text-align:right">${esc(inv.pieceName||'')}</td></tr>
+        <tr><td style="padding:6px 0;color:#666">Sold To</td><td style="padding:6px 0;text-align:right">${esc(inv.buyerName||'')}</td></tr>
+        <tr><td colspan="2" style="border-top:1px solid #DDD;padding-top:10px"></td></tr>
+        <tr><td style="padding:6px 0;color:#666">Sale Price</td><td style="padding:6px 0;text-align:right">${fmt(inv.price)}</td></tr>
+        <tr><td style="padding:6px 0;color:#666">AFC Commission (${inv.commissionPct||''}%)</td><td style="padding:6px 0;text-align:right">${fmt(inv.afcCommission)}</td></tr>
+        <tr><td style="padding:8px 0;font-weight:bold">Amount Owed to Artist</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#2a7a50">${fmt(inv.amountOwed)}</td></tr>
+        <tr><td colspan="2" style="border-top:1px solid #DDD;padding-top:10px"></td></tr>
+        <tr><td style="padding:6px 0;color:#666">Status</td><td style="padding:6px 0;text-align:right">${inv.status==='paid'?'Paid'+(inv.paidAt?' ('+esc(inv.paidAt)+')':''):'Awaiting Payment'}</td></tr>
+      </table>
+      ${showBank?`
+      <div style="margin-top:24px;padding:16px;border:1px solid #DDD;font-size:13px">
+        <div style="font-weight:bold;margin-bottom:6px">Payment Details</div>
+        <div>Account Name: ${esc(inv.bankDetails.accountName||'')}</div>
+        <div>Sort Code: ${esc(inv.bankDetails.sortCode||'')}</div>
+        <div>Account Number: ${esc(inv.bankDetails.accountNumber||'')}</div>
+      </div>`:''}
+      <p style="margin-top:32px;font-size:11px;color:#999;text-align:center">Art for Cure &middot; artforcure.org.uk &middot; Registered Charity 1175161</p>
+    </div>`;
+  setTimeout(()=>window.print(), 50);
+};
 
 window.lookupInvoices = async function(presetEmail){
   const email=(presetEmail||'').toLowerCase();
