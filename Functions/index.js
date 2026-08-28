@@ -226,7 +226,7 @@ exports.saleEmails = onDocumentCreated(
               <div class="price-box">Sale price: ${salePrice}</div>
               ${buyerRows ? `<p><strong>Buyer contact details:</strong></p><div class="buyer-box">${buyerRows}</div><p>Please contact the buyer directly to arrange delivery (and let them know of any delivery fee), then confirm in the portal once you've been in touch.</p>` : ''}
               <p>Please log in to the artist portal to view the full details of this sale, confirm you've contacted the buyer, and mark it as fulfilled once it's ready to go.</p>
-              <p style="text-align:center;margin:28px 0"><a class="cta" href="https://submit.artforcure.org.uk" target="_blank">View My Sales</a></p>
+              <p style="text-align:center;margin:28px 0"><a class="cta" href="https://submit.artforcure.org.uk/?tab=sales" target="_blank">View My Sales</a></p>
               <p>Thank you for supporting Art for Cure with your wonderful work.</p>
               <p>With warm wishes,<br/><strong>Art for Cure</strong></p>
             </div>
@@ -253,20 +253,32 @@ exports.saleEmails = onDocumentCreated(
       `
     };
 
+    // Send the artist email first.
+    let artistSendOk = true;
     try {
       await sgMail.send(msg);
-      await snap.ref.update({ status: 'sent', sentAt: new Date() });
       console.log(`Sale email sent to ${artistEmail} for "${pieceName}"`);
     } catch (err) {
+      artistSendOk = false;
       console.error('SendGrid error (artist email):', err.response ? err.response.body : err);
-      await snap.ref.update({ status: 'error', error: err.message });
     }
 
+    // Always attempt the sales-team notification too — this must not depend on
+    // the artist email, or on the Firestore status write below, succeeding.
     try {
       await sgMail.send(salesTeamMsg);
       console.log(`Sale-concluded email sent to sales@artforcure.org.uk for "${pieceName}"`);
     } catch (err) {
       console.error('SendGrid error (sales team email):', err.response ? err.response.body : err);
+    }
+
+    // Record the outcome last, and never let a Firestore write failure crash the function.
+    try {
+      await snap.ref.update(
+        artistSendOk ? { status: 'sent', sentAt: new Date() } : { status: 'error', error: 'artist email send failed — see logs' }
+      );
+    } catch (err) {
+      console.error(`Firestore status update failed for saleEmails/${event.params.jobId}:`, err.message);
     }
   }
 );
