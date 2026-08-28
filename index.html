@@ -390,6 +390,7 @@ window.showTab = function(tab) {
   if(tab==='volunteers') renderVolunteersHub();
   if(tab==='invoices') renderInvoicesPortal(_currentUser?.email);
   if(tab==='behalf') renderBehalfHub();
+  if(tab==='artist' && !_isAdmin) lookupArtist(_currentUser?.email);
 };
 
 window.adminEditSubmission = function(id){
