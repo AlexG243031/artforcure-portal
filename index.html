@@ -394,7 +394,7 @@ window.showTab = function(tab) {
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
-  if(tab==='admin') loadAdmin();
+  if(tab==='admin'){ _adminLoaded=false; loadAdmin(); }
   if(tab==='orders') loadOrders();
   if(tab==='settings') renderSettingsHub();
   if(tab==='volunteers') renderVolunteersHub();
@@ -1919,21 +1919,19 @@ window.saveEdit=async function(id){
 // ─────────────────────────────────────────
 // ADMIN PANEL
 // ─────────────────────────────────────────
-let _adminFilter='pending', _adminSubs=[], _expandedId=null, _adminLoadedFilter=null;
+let _adminFilter='pending', _adminSubs=[], _expandedId=null, _adminLoaded=false;
+// Loads every non-archived submission (any status) in one query, so the "Awaiting Review" /
+// "Previously Reviewed" counts and lists are always computed from the same complete set —
+// previously each tab only ever fetched its own status, so whichever tab you weren't on
+// showed a count of 0 rather than the real number.
 async function loadAdmin(){
-  if(_adminLoadedFilter===_adminFilter){ renderAdmin(); return; }
+  if(_adminLoaded){ renderAdmin(); return; }
   const v=document.getElementById('view-admin');
   v.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading…</div>';
   try{
-    let q;
-    if(_adminFilter==='pending'){
-      q = query(collection(db,'submissions'), where('status','==','pending'), orderBy('createdAt','desc'));
-    } else {
-      q = query(collection(db,'submissions'), where('status','in',['approved','rejected']), orderBy('createdAt','desc'));
-    }
-    const snap=await getDocs(q);
+    const snap=await getDocs(query(collection(db,'submissions'), orderBy('createdAt','desc')));
     _adminSubs=[]; snap.forEach(d=>{ const sub={id:d.id,...d.data()}; if(!sub.archived) _adminSubs.push(sub); });
-    _adminLoadedFilter=_adminFilter;
+    _adminLoaded=true;
     renderAdmin();
   }catch(err){v.innerHTML=`<div class="alert alert-danger">Error: ${err.message}</div>`;}
 }
@@ -2047,7 +2045,7 @@ window.pushToSheetsBtn = async function(id) {
     btn.disabled=false; btn.textContent='📊 Push to Sheet';
   }
 };
-window.setFilter=function(f){_adminFilter=f;loadAdmin();};
+window.setFilter=function(f){_adminFilter=f;renderAdmin();};
 window.toggleExpand=function(id){_expandedId=_expandedId===id?null:id;renderAdmin();};
 window.updateCommission=async function(id,val){
   const pct=Math.min(100,Math.max(0,parseFloat(val)||0));
@@ -2893,7 +2891,8 @@ window.archiveSubmission = async function(id) {
   const newLog = [...(sub?.auditLog||[]), {ts:now, by:'Admin', note:'Archived'}];
   try {
     await updateDoc(doc(db,'submissions',id), { archived:true, archivedAt:now, auditLog:newLog });
-    loadAdmin();
+    _adminSubs = _adminSubs.filter(s=>s.id!==id);
+    renderAdmin();
   } catch(e) { alert('Error archiving: '+e.message); }
 };
 
