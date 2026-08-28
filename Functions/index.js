@@ -182,8 +182,15 @@ exports.saleEmails = onDocumentCreated(
     sgMail.setApiKey(SENDGRID_KEY.value());
     const snap = event.data;
     const job = snap.data();
-    const { artistEmail, artistName, pieceName, salePrice } = job;
+    const { artistEmail, artistName, pieceName, salePrice, buyerName, buyerEmail, buyerPhone, buyerAddr } = job;
     if (!artistEmail) { console.warn('saleEmails doc missing artistEmail — skipping', event.params.jobId); return; }
+
+    const buyerRows = [
+      buyerName  ? `<p style="margin:0 0 4px"><strong>Name:</strong> ${buyerName}</p>`  : '',
+      buyerEmail ? `<p style="margin:0 0 4px"><strong>Email:</strong> ${buyerEmail}</p>` : '',
+      buyerPhone ? `<p style="margin:0 0 4px"><strong>Mobile:</strong> ${buyerPhone}</p>` : '',
+      buyerAddr  ? `<p style="margin:0"><strong>Address:</strong> ${buyerAddr}</p>`      : '',
+    ].filter(Boolean).join('');
 
     const msg = {
       to: artistEmail,
@@ -202,6 +209,8 @@ exports.saleEmails = onDocumentCreated(
             .body h2 { font-size: 26px; font-weight: normal; color: #D30180; margin-bottom: 8px; }
             .body p { margin: 0 0 18px; }
             .price-box { background: #FAF7F2; border: 1px solid #DDD8D0; border-radius: 4px; padding: 16px 20px; margin: 0 0 18px; font-size: 18px; color: #D30180; font-weight: bold; }
+            .buyer-box { background: #FAF7F2; border: 1px solid #DDD8D0; border-radius: 4px; padding: 16px 20px; margin: 0 0 18px; font-size: 14px; }
+            .buyer-box p { margin: 0 0 4px; }
             .cta { display: inline-block; background: #D30180; color: #FFFFFF !important; text-decoration: none; padding: 12px 28px; border-radius: 4px; font-family: sans-serif; font-size: 14px; font-weight: 700; }
             .footer { padding: 24px 40px; border-top: 1px solid #DDD8D0; font-size: 12px; color: #9B9B9B; font-family: sans-serif; text-align: center; }
           </style>
@@ -215,7 +224,8 @@ exports.saleEmails = onDocumentCreated(
               <h2>Dear ${artistName || 'there'},</h2>
               <p>Wonderful news — your piece <strong>${pieceName}</strong> has just sold!</p>
               <div class="price-box">Sale price: ${salePrice}</div>
-              <p>Please log in to the artist portal to view the full details of this sale and mark it as fulfilled once it's ready to go to the buyer.</p>
+              ${buyerRows ? `<p><strong>Buyer contact details:</strong></p><div class="buyer-box">${buyerRows}</div><p>Please contact the buyer directly to arrange delivery (and let them know of any delivery fee), then confirm in the portal once you've been in touch.</p>` : ''}
+              <p>Please log in to the artist portal to view the full details of this sale, confirm you've contacted the buyer, and mark it as fulfilled once it's ready to go.</p>
               <p style="text-align:center;margin:28px 0"><a class="cta" href="https://submit.artforcure.org.uk" target="_blank">View My Sales</a></p>
               <p>Thank you for supporting Art for Cure with your wonderful work.</p>
               <p>With warm wishes,<br/><strong>Art for Cure</strong></p>
@@ -229,12 +239,67 @@ exports.saleEmails = onDocumentCreated(
         </html>
       `
     };
+
+    const salesTeamMsg = {
+      to: 'sales@artforcure.org.uk',
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: `Sale concluded — "${pieceName}" (${artistName || 'artist'})`,
+      html: `
+        <p>A sale has just gone through and the artist has been notified.</p>
+        <p><strong>Artist:</strong> ${artistName || ''} (${artistEmail})<br/>
+        <strong>Piece:</strong> ${pieceName}<br/>
+        <strong>Sale price:</strong> ${salePrice}</p>
+        ${buyerRows ? `<p><strong>Buyer:</strong></p>${buyerRows}` : ''}
+      `
+    };
+
     try {
       await sgMail.send(msg);
       await snap.ref.update({ status: 'sent', sentAt: new Date() });
       console.log(`Sale email sent to ${artistEmail} for "${pieceName}"`);
     } catch (err) {
-      console.error('SendGrid error:', err.response ? err.response.body : err);
+      console.error('SendGrid error (artist email):', err.response ? err.response.body : err);
+      await snap.ref.update({ status: 'error', error: err.message });
+    }
+
+    try {
+      await sgMail.send(salesTeamMsg);
+      console.log(`Sale-concluded email sent to sales@artforcure.org.uk for "${pieceName}"`);
+    } catch (err) {
+      console.error('SendGrid error (sales team email):', err.response ? err.response.body : err);
+    }
+  }
+);
+
+// ---------------------------------------------------
+// TRIGGER: Artist confirmed they've contacted the buyer -> alert the sales team
+// ---------------------------------------------------
+exports.buyerContactedAlerts = onDocumentCreated(
+  {
+    document: 'buyerContactedAlerts/{jobId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY],
+  },
+  async (event) => {
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const snap = event.data;
+    const job = snap.data();
+    const { artistName, artistEmail, pieceName, buyerName, salePrice } = job;
+
+    const msg = {
+      to: 'sales@artforcure.org.uk',
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: `Buyer contacted — "${pieceName}" (${artistName || 'artist'})`,
+      html: `
+        <p><strong>${artistName || 'The artist'}</strong> (${artistEmail || ''}) has confirmed they've contacted the buyer${buyerName ? ' ('+buyerName+')' : ''} about the sale of <strong>${pieceName}</strong>${salePrice ? ' ('+salePrice+')' : ''}.</p>
+      `
+    };
+    try {
+      await sgMail.send(msg);
+      await snap.ref.update({ status: 'sent', sentAt: new Date() });
+      console.log(`Buyer-contacted alert sent for "${pieceName}"`);
+    } catch (err) {
+      console.error('SendGrid error (buyer-contacted alert):', err.response ? err.response.body : err);
       await snap.ref.update({ status: 'error', error: err.message });
     }
   }
@@ -270,8 +335,8 @@ exports.checkForNewSales = onSchedule(
     if (!tokenRes.ok) { console.error('Shopify token fetch failed:', tokenData); return; }
     const token = tokenData.access_token;
 
-    // Fetch recent orders
-    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,line_items', {
+    // Fetch recent orders (customer field gives us buyer name/email/phone/address)
+    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,line_items,customer', {
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store }
     });
     if (!ordersRes.ok) { console.error('Shopify orders fetch failed:', await ordersRes.text()); return; }
@@ -290,6 +355,13 @@ exports.checkForNewSales = onSchedule(
     let newSalesFound = 0;
 
     for (const order of orders) {
+      const customer = order.customer || {};
+      const addr = customer.default_address || {};
+      const buyerName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Unknown';
+      const buyerEmail = customer.email || '';
+      const buyerPhone = customer.phone || addr.phone || '';
+      const buyerAddr = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ');
+
       for (const item of (order.line_items || [])) {
         const orderId = order.id + '_' + item.id;
         if (notified.has(orderId)) continue;
@@ -303,6 +375,7 @@ exports.checkForNewSales = onSchedule(
             artistName: matchedSub.artist.name || 'there',
             pieceName: matchedSub.piece?.name || item.title || 'your piece',
             salePrice: '£' + price.toFixed(2),
+            buyerName, buyerEmail, buyerPhone, buyerAddr,
             createdAt: new Date(),
             status: 'pending'
           });
@@ -312,9 +385,10 @@ exports.checkForNewSales = onSchedule(
             artistName: matchedSub.artist.name || '',
             pieceName: matchedSub.piece?.name || item.title || '',
             salePrice: price,
-            buyerName: [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Unknown',
+            buyerName, buyerEmail, buyerPhone, buyerAddr,
             submissionId: matchedSub.id || '',
-            fulfilled: false
+            fulfilled: false,
+            buyerContacted: false
           });
           notified.add(orderId);
           newSalesFound++;

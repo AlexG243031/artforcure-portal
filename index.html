@@ -1308,10 +1308,34 @@ function renderSalesResults(sales){
       </div>
       <div class="detail-grid">
         <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(s.salePrice)}</div></div>
+        ${s.buyerEmail?`<div><div class="detail-label">Buyer Email</div><div class="detail-value">${esc(s.buyerEmail)}</div></div>`:''}
+        ${s.buyerPhone?`<div><div class="detail-label">Buyer Mobile</div><div class="detail-value">${esc(s.buyerPhone)}</div></div>`:''}
+        ${s.buyerAddr?`<div><div class="detail-label">Buyer Address</div><div class="detail-value">${esc(s.buyerAddr)}</div></div>`:''}
       </div>
-      ${!s.fulfilled?`<div style="margin-top:1rem"><button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button></div>`:''}
+      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContacted('${s.id}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
+        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button>`:''}
+      </div>
     </div>`).join('');
 }
+
+window.confirmBuyerContacted = async function(saleId){
+  try{
+    const saleSnap = await getDoc(doc(db,'sale_notifications',saleId));
+    if(!saleSnap.exists()){ alert('Sale record not found.'); return; }
+    const sale = { id: saleId, ...saleSnap.data() };
+    const now = nowStr();
+    await updateDoc(doc(db,'sale_notifications',saleId), { buyerContacted:true, buyerContactedAt: now });
+    try{
+      await addDoc(collection(db,'buyerContactedAlerts'), {
+        artistName: sale.artistName||'', artistEmail: sale.artistEmail||'',
+        pieceName: sale.pieceName||'', buyerName: sale.buyerName||'',
+        salePrice: fmt(sale.salePrice), createdAt: serverTimestamp(), status:'pending'
+      });
+    }catch(e){ console.warn('Buyer-contacted alert failed to queue:', e); }
+    lookupSales(sale.artistEmail);
+  }catch(e){ alert('Error: '+e.message); }
+};
 
 window.markFulfilled = async function(saleId){
   if(!confirm('Confirm this item has been delivered to the buyer?')) return;
@@ -3016,6 +3040,7 @@ async function loadOrders() {
               artistName: matchedSub.artist.name || 'there',
               pieceName: matchedSub.piece?.name || item.title || 'your piece',
               salePrice: fmt(price),
+              buyerName, buyerEmail, buyerPhone, buyerAddr,
               createdAt: serverTimestamp(),
               status: 'pending'
             });
@@ -3025,9 +3050,10 @@ async function loadOrders() {
               artistName: matchedSub.artist.name || '',
               pieceName: matchedSub.piece?.name || item.title || '',
               salePrice: price,
-              buyerName: buyerName,
+              buyerName, buyerEmail, buyerPhone, buyerAddr,
               submissionId: matchedSub.id,
-              fulfilled: false
+              fulfilled: false,
+              buyerContacted: false
             });
             notified.add(orderId);
           } catch(e) { console.warn('Sale notification failed for', orderId, e); }
