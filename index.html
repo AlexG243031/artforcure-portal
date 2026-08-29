@@ -3259,6 +3259,96 @@ window.bulkSetProductType = async function(assignments){
 };
 
 // ─────────────────────────────────────────
+// Companion to auditProductTypes/bulkSetProductType: for the ~155 legacy
+// products with no Firestore submission behind them, vendor is uniformly
+// "Art For Cure" so it can't identify the artist. Instead, match each
+// artist's existing named Shopify Collection and bulk-set the Type on every
+// product inside it that's currently missing one (products that already
+// have a Type are left untouched, so it's safe to run without first
+// checking which ones were already correct). Run manually from the browser
+// console while signed in as admin:
+//   applyProductTypeByCollection([
+//     {artist:'Anna Toppin', category:'Print'},
+//     {artist:'John Cox', category:'Sculpture'},
+//     ...
+//   ]);
+// Logs a summary, plus any artist names whose Collection title couldn't be
+// matched (check spelling against the live Collections list in that case).
+// Not linked to any UI — safe to leave in place, does nothing unless called.
+// ─────────────────────────────────────────
+window.applyProductTypeByCollection = async function(rules){
+  const intg = window._currentIntegrations || {};
+  const worker = (intg.shopifyWorker || 'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/, '');
+  const store = intg.shopifyStore;
+  const token = await getShopifyToken();
+  const headers = { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store };
+
+  async function fetchAllPaginated(path, key){
+    let all = [];
+    while(path){
+      const res = await fetch(worker + '/proxy?path=' + path, { headers });
+      if(!res.ok){ console.error('Failed fetching', path, '— status', res.status, await res.text().catch(()=>'')); break; }
+      const data = await res.json();
+      all = all.concat(data[key] || []);
+      const link = res.headers.get('Link') || res.headers.get('link');
+      let next = null;
+      if(link){
+        const part = link.split(',').map(s=>s.trim()).find(s=>s.endsWith('rel="next"'));
+        if(part){ const m = part.match(/<([^>]+)>/); if(m) next = m[1].replace(/^https?:\/\/[^/]+/, ''); }
+      }
+      path = next;
+    }
+    return all;
+  }
+
+  console.log('Fetching all Shopify collections…');
+  const [customCols, smartCols] = await Promise.all([
+    fetchAllPaginated('/admin/api/2025-01/custom_collections.json?limit=250&fields=id,title', 'custom_collections'),
+    fetchAllPaginated('/admin/api/2025-01/smart_collections.json?limit=250&fields=id,title', 'smart_collections'),
+  ]);
+  const allCollections = customCols.concat(smartCols);
+  console.log('Found', allCollections.length, 'collections total.');
+
+  const norm = s => (s||'').trim().toLowerCase();
+  let totalUpdated = 0, totalSkippedHasType = 0, totalFailed = 0;
+  const notFound = [];
+
+  for(const r of rules){
+    const artistKey = norm(r.artist);
+    const match = allCollections.find(c => norm(c.title) === artistKey);
+    if(!match){
+      console.warn('No matching Collection found for artist:', r.artist);
+      notFound.push(r.artist);
+      continue;
+    }
+    const products = await fetchAllPaginated(
+      '/admin/api/2025-01/products.json?collection_id=' + match.id + '&limit=250&fields=id,title,product_type',
+      'products'
+    );
+    let updated = 0, skipped = 0, failed = 0;
+    for(const p of products){
+      if(p.product_type && p.product_type.trim()){ skipped++; continue; }
+      try{
+        const res = await fetch(worker + '/proxy?path=/admin/api/2025-01/products/'+p.id+'.json', {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product: { id: p.id, product_type: r.category } }),
+        });
+        if(!res.ok){ console.error('Failed to set type for', p.id, '(', p.title, ') — status', res.status, await res.text().catch(()=>'')); failed++; continue; }
+        console.log('Set', p.title, '(collection:', r.artist, ') →', r.category);
+        updated++;
+      }catch(e){ console.error('Error setting type for', p.id, e); failed++; }
+    }
+    console.log(r.artist, '(collection #'+match.id+'):', products.length, 'products —', updated, 'updated,', skipped, 'already had a Type,', failed, 'failed.');
+    totalUpdated += updated; totalSkippedHasType += skipped; totalFailed += failed;
+  }
+
+  console.log('─────────────────────────────');
+  console.log('applyProductTypeByCollection complete. Updated:', totalUpdated, 'Already had a Type:', totalSkippedHasType, 'Failed:', totalFailed);
+  if(notFound.length){ console.warn('Artists with no matching Collection (check spelling):', notFound.join(', ')); }
+};
+
+// ─────────────────────────────────────────
 // ORDERS (from Shopify via Worker)
 // ─────────────────────────────────────────
 async function loadOrders() {
