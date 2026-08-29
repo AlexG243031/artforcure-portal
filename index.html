@@ -2620,6 +2620,30 @@ async function pushToSheets(sub) {
 }
 
 // ── SHOPIFY PUSH ──
+// Shopify's standardized "Category" taxonomy field (distinct from the
+// free-text "Type"/product_type field). Best-guess GID for the top-level
+// "Arts & Entertainment" category, following Shopify's documented mnemonic
+// pattern (e.g. "Animals & Pet Supplies" = ap, "Apparel & Accessories" = aa).
+// VERIFY after the next live approval: check the console log this prints,
+// or check the product's Category field in Shopify admin. If wrong, correct
+// this constant — you can find the right ID by setting Category on one
+// product manually in Shopify admin, then asking for a quick script to read
+// it back via GraphQL.
+const SHOPIFY_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/ae';
+
+let _shopifyLocationId = null;
+async function getShopifyLocationId(worker, store, token){
+  if(_shopifyLocationId) return _shopifyLocationId;
+  const res = await fetch(worker + '/proxy?path=/admin/api/2025-01/locations.json', {
+    headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store },
+  });
+  if(!res.ok) throw new Error('Could not load Shopify locations (status '+res.status+').');
+  const locs = (await res.json()).locations || [];
+  if(!locs.length) throw new Error('No Shopify locations found.');
+  _shopifyLocationId = locs[0].id;
+  return _shopifyLocationId;
+}
+
 async function pushToShopify(sub) {
   const intg = window._currentIntegrations || {};
   if(!intg.shopifyStore || !intg.shopifyClientId || !intg.shopifyClientSecret)
@@ -2630,11 +2654,14 @@ async function pushToShopify(sub) {
 
   const price = parseFloat(sub.piece.price)||0;
   const comm  = parseFloat(sub.commission)||40;
-  const cos   = price * ((100 - comm) / 100);
+  const cos   = price * ((100 - comm) / 100);   // artist payout ("cost of sale")
+  const charityCut = price - cos;                // Art for Cure's share of this sale
   const imgs = (sub.images||[]).map((img,i)=>({ src: img.url, position: i+1, alt: sub.piece.name }));
 
+  // Note: artist bio deliberately NOT included here — it lives on the
+  // Shopify Collection (one per artist), not repeated on every product.
   const bodyHtml = [
-    sub.artist.bio ? '<p><em>'+sub.artist.bio+'</em></p>' : '',
+    '<p><strong>£'+charityCut.toFixed(2)+' of this sale</strong> goes directly to supporting Art for Cure’s work.</p>',
     '<p><strong>Medium:</strong> '+sub.piece.medium+'</p>',
     '<p><strong>Dimensions:</strong> '+sub.piece.dimensions+' cm</p>',
     sub.piece.weight ? '<p><strong>Weight:</strong> '+sub.piece.weight+'g</p>' : '',
@@ -2643,16 +2670,25 @@ async function pushToShopify(sub) {
     is2D(sub.category) && sub.piece.framed ? '<p><strong>Framing:</strong> '+sub.piece.framed+(sub.piece.frameDesc?' — '+sub.piece.frameDesc:'')+(sub.piece.glazed?' ('+sub.piece.glazed+')':'')+'</p>' : '',
   ].filter(Boolean).join(' ');
 
+  // Inventory: a One Off piece is a unique physical item, so it always gets
+  // quantity 1 (goes "sold out" once bought). A Limited/Open Edition piece
+  // is only stock-tracked if a numeric "Available to Order" was entered for
+  // it; otherwise it's left untracked (treated as made-to-order/unlimited).
+  const isOneOff = sub.piece.edition === 'One Off';
+  const orderQty = parseInt(sub.piece.numOrder, 10);
+  const trackInventory = isOneOff || (Number.isFinite(orderQty) && orderQty > 0);
+  const inventoryQty = isOneOff ? 1 : orderQty;
+
   const product = {
     title: sub.piece.name,
     body_html: bodyHtml,
-    vendor: sub.artist.name,
+    vendor: 'Art For Cure',
     status: 'draft',
     product_type: sub.category,
     tags: ['Art for Cure', sub.category, sub.piece.edition, sub.artist.name].filter(Boolean).join(', '),
     variants: [{
       price: price.toFixed(2),
-      inventory_management: null,
+      inventory_management: trackInventory ? 'shopify' : null,
       requires_shipping: false,
     }],
     images: imgs,
@@ -2674,16 +2710,52 @@ async function pushToShopify(sub) {
   }
   const data = await res.json();
   const productId = data.product.id.toString();
+  const inventoryItemId = data.product.variants[0].inventory_item_id;
 
-  // Set cost per item via inventory item API (cannot be set at product creation)
+  // Set cost per item via inventory item API (cannot be set at product creation).
+  // Errors here are non-fatal to the product creation itself, but are now
+  // logged loudly (not swallowed) so a real failure is visible in the console.
   try {
-    const inventoryItemId = data.product.variants[0].inventory_item_id;
-    await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_items/'+inventoryItemId+'.json', {
+    const costRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_items/'+inventoryItemId+'.json', {
       method: 'PUT',
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2), tracked: false } }),
+      body: JSON.stringify({ inventory_item: { id: inventoryItemId, cost: cos.toFixed(2) } }),
     });
-  } catch(e) { console.warn('Cost update failed (non-fatal):', e); }
+    if(!costRes.ok) console.error('Cost-per-item update failed for', sub.piece.name, '— status', costRes.status, await costRes.text().catch(()=>''));
+  } catch(e) { console.error('Cost-per-item update failed for', sub.piece.name, '(non-fatal):', e); }
+
+  // Set stock quantity (see trackInventory/inventoryQty above).
+  if(trackInventory){
+    try {
+      const locationId = await getShopifyLocationId(worker, store, token);
+      const invRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/inventory_levels/set.json', {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: inventoryQty }),
+      });
+      if(!invRes.ok) console.error('Inventory quantity update failed for', sub.piece.name, '— status', invRes.status, await invRes.text().catch(()=>''));
+    } catch(e) { console.error('Inventory quantity update failed for', sub.piece.name, '(non-fatal):', e); }
+  }
+
+  // Set the standardized Shopify "Category" (Arts & Entertainment) via
+  // GraphQL — the legacy REST product endpoint has no field for this at all.
+  try {
+    const catRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/graphql.json', {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'mutation setCategory($id: ID!, $category: ID!) { productUpdate(product: {id: $id, category: $category}) { product { id category { id name } } userErrors { field message } } }',
+        variables: { id: 'gid://shopify/Product/'+productId, category: SHOPIFY_CATEGORY_GID },
+      }),
+    });
+    const catData = await catRes.json().catch(()=>({}));
+    const userErrors = catData && catData.data && catData.data.productUpdate ? catData.data.productUpdate.userErrors : null;
+    if(!catRes.ok || (userErrors && userErrors.length)) {
+      console.error('Category (Arts & Entertainment) update failed for', sub.piece.name, '— verify SHOPIFY_CATEGORY_GID is correct:', userErrors || catData);
+    } else {
+      console.log('Category set for', sub.piece.name, ':', catData.data.productUpdate.product.category);
+    }
+  } catch(e) { console.error('Category update failed for', sub.piece.name, '(non-fatal):', e); }
 
   return productId;
 }
