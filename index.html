@@ -3173,6 +3173,92 @@ window.bulkFixCategory = async function(rules){
 };
 
 // ─────────────────────────────────────────
+// One-off admin utility: audit every product directly in Shopify (not just
+// portal submissions) for a missing "Type" field — most likely legacy
+// products loaded before the portal went live, with no Firestore submission
+// behind them at all, so bulkFixCategory can't reach them. Run manually from
+// the browser console while signed in as admin:
+//   auditProductTypes()
+// Paginates through ALL products (not just the first 250). Results are also
+// saved to window._productTypeAudit for reference (e.g. to build the
+// assignments list for bulkSetProductType, below).
+// Not linked to any UI — safe to leave in place, does nothing unless called.
+// ─────────────────────────────────────────
+window.auditProductTypes = async function(){
+  const intg = window._currentIntegrations || {};
+  const worker = (intg.shopifyWorker || 'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/, '');
+  const store = intg.shopifyStore;
+  const token = await getShopifyToken();
+  let path = '/admin/api/2025-01/products.json?limit=250&fields=id,title,product_type,vendor,status';
+  let all = [];
+  let page = 1;
+  while(path){
+    const res = await fetch(worker + '/proxy?path=' + path, {
+      headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store },
+    });
+    if(!res.ok){ console.error('Failed to fetch products, page', page, '— status', res.status, await res.text().catch(()=>'')); break; }
+    const data = await res.json();
+    const batch = data.products || [];
+    all = all.concat(batch);
+    const link = res.headers.get('Link') || res.headers.get('link');
+    let next = null;
+    if(link){
+      const part = link.split(',').map(s=>s.trim()).find(s=>s.endsWith('rel="next"'));
+      if(part){ const m = part.match(/<([^>]+)>/); if(m) next = m[1].replace(/^https?:\/\/[^/]+/, ''); }
+    }
+    if(!next && page === 1 && batch.length === 250){
+      console.warn('Got a full page of 250 with no pagination Link header from the worker — there may be more products beyond this. If your store has 250+ products, ask Claude to check whether the Cloudflare Worker forwards the Link response header.');
+    }
+    path = next;
+    page++;
+  }
+  const missing = all.filter(p => !p.product_type || !p.product_type.trim());
+  console.log('─────────────────────────────');
+  console.log('auditProductTypes complete. Total products checked:', all.length, 'across', page-1, 'page(s).');
+  console.log('Missing a Type:', missing.length);
+  if(missing.length){
+    console.log('Products missing a Type (id | title | vendor | status):');
+    missing.forEach(p => console.log(' -', p.id, '|', p.title, '|', p.vendor, '|', p.status));
+  }
+  window._productTypeAudit = missing;
+  console.log('Full list also saved to window._productTypeAudit.');
+};
+
+// ─────────────────────────────────────────
+// Companion to auditProductTypes: bulk-set the Type field on a list of
+// Shopify product IDs once you've reviewed the audit and grouped them by
+// what they actually are. Run manually from the browser console:
+//   bulkSetProductType([
+//     {ids:[123456789, 987654321], type:'Sculpture'},
+//     {ids:[555555555], type:'Ceramic'},
+//   ]);
+// Not linked to any UI — safe to leave in place, does nothing unless called.
+// ─────────────────────────────────────────
+window.bulkSetProductType = async function(assignments){
+  const intg = window._currentIntegrations || {};
+  const worker = (intg.shopifyWorker || 'https://holy-hill-e968.alex-7fd.workers.dev').replace(/\/$/, '');
+  const store = intg.shopifyStore;
+  const token = await getShopifyToken();
+  let updated = 0, failed = 0;
+  for(const group of assignments){
+    for(const id of (group.ids||[])){
+      try{
+        const res = await fetch(worker + '/proxy?path=/admin/api/2025-01/products/'+id+'.json', {
+          method: 'PUT',
+          headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product: { id, product_type: group.type } }),
+        });
+        if(!res.ok){ console.error('Failed to set type for', id, '— status', res.status, await res.text().catch(()=>'')); failed++; continue; }
+        console.log('Set', id, '→', group.type);
+        updated++;
+      }catch(e){ console.error('Error setting type for', id, e); failed++; }
+    }
+  }
+  console.log('─────────────────────────────');
+  console.log('bulkSetProductType complete. Updated:', updated, 'Failed:', failed);
+};
+
+// ─────────────────────────────────────────
 // ORDERS (from Shopify via Worker)
 // ─────────────────────────────────────────
 async function loadOrders() {
