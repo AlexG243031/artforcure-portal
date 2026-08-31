@@ -1257,6 +1257,7 @@ function renderArtistPortal(prefillEmail){
 }
 window.lookupArtist = async function(email){
   if(!email)return;
+  window._artistDetailsPanel='current';
   const res=document.getElementById('lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
@@ -1271,6 +1272,7 @@ window.lookupArtistByName = async function(){
   const nameInput = document.getElementById('lookup-name');
   const fragment = (nameInput ? nameInput.value.trim().toLowerCase() : '');
   if(!fragment)return;
+  window._artistDetailsPanel='current';
   const res=document.getElementById('lookup-result');
   res.innerHTML='<div class="loading-state"><div class="spinner"></div> Searching…</div>';
   try{
@@ -1665,20 +1667,27 @@ window.markInvoicePaid = async function(invoiceId){
 };
 
 
-function renderArtistDetails(subs){
-  const el=document.getElementById('artist-details');
-  el.innerHTML=subs.map(sub=>{
-    const sc={pending:'#e8427a',approved:'#2a7a50',rejected:'#b83030'}[sub.status]||'#999';
-    const al=(sub.auditLog||[]).map(e=>`<div class="audit-entry"><span class="audit-ts">${e.ts}</span> — ${e.by}: ${e.note}</div>`).join('');
-    const imgs=sub.images||[];
-    const imgHtml=imgs.length?`<div style="margin-top:1rem"><div class="detail-label">Images (${imgs.length})</div>
-      <div class="img-grid-display" style="margin-top:8px">${imgs.map(img=>`<a href="${esc(img.url)}" target="_blank"><img src="${esc(img.url)}" alt="Artwork" loading="lazy"/></a>`).join('')}</div></div>`:'';
-    return `<div class="card" style="border-left:4px solid ${sc}">
+function renderOneArtistSubCard(sub, isArchived){
+  const sc={pending:'#e8427a',approved:'#2a7a50',rejected:'#b83030',withdrawn:'#8a8a8a'}[sub.status]||'#999';
+  const al=(sub.auditLog||[]).map(e=>`<div class="audit-entry"><span class="audit-ts">${e.ts}</span> — ${e.by}: ${e.note}</div>`).join('');
+  const imgs=sub.images||[];
+  const imgHtml=imgs.length?`<div style="margin-top:1rem"><div class="detail-label">Images (${imgs.length})</div>
+    <div class="img-grid-display" style="margin-top:8px">${imgs.map(img=>`<a href="${esc(img.url)}" target="_blank"><img src="${esc(img.url)}" alt="Artwork" loading="lazy"/></a>`).join('')}</div></div>`:'';
+  const actions = isArchived
+    ? (_isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="restoreFromArtistView('${sub.id}','${esc(sub.artist?.email||'')}')">↩ Restore</button>` : '')
+    : `${_isAdmin
+        ? `<button class="btn btn-secondary btn-sm" onclick="adminEditFromArtistView('${sub.id}')">✎ Edit as Admin</button>`
+        : (!sub.shopifyId
+            ? `<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`)
+      }
+      ${sub.status!=='withdrawn'&&sub.status!=='rejected'?`<button class="btn btn-danger btn-sm" onclick="withdrawSubmission('${sub.id}')">Withdraw</button>`:''}`;
+  return `<div class="card" style="border-left:4px solid ${sc}">
       <div class="sub-header">
         <div><div class="sub-artist">${esc(sub.piece.name)}</div><div class="sub-piece">${esc(sub.artist?.name||'')} &middot; ${sub.category}</div></div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
           <span class="badge badge-${sub.status}">${sub.status.charAt(0).toUpperCase()+sub.status.slice(1)}</span>
-          ${sub.shopifyId?'<span class="shopify-tag">Live on Shopify</span>':''}
+          ${isArchived?`<span class="badge" style="background:var(--gray-bg);color:var(--gray-text);border:1px solid var(--gray-border)">📁 Archived${sub.archivedAt?' '+esc(sub.archivedAt):''}</span>`:(sub.shopifyId?'<span class="shopify-tag">Live on Shopify</span>':'')}
         </div>
       </div>
       <div class="detail-grid">
@@ -1692,25 +1701,40 @@ function renderArtistDetails(subs){
         <div><div class="detail-label">Submitted</div><div class="detail-value">${sub.submittedAt}</div></div>
       </div>
       ${imgHtml}
-      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
-               ${_isAdmin
-          ? `<button class="btn btn-secondary btn-sm" onclick="adminEditFromArtistView('${sub.id}')">✎ Edit as Admin</button>`
-          : (!sub.shopifyId
-              ? `<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`
-              : `<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`)
-        }
-        ${sub.status!=='withdrawn'&&sub.status!=='rejected'?`<button class="btn btn-danger btn-sm" onclick="withdrawSubmission('${sub.id}')">Withdraw</button>`:''}
-      </div>
+      ${actions?`<div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">${actions}</div>`:''}
       ${al?`<div class="audit-log" style="margin-top:1rem"><div class="audit-title">History</div>${al}</div>`:''}
     </div>`;
-  }).join('');
+}
+function renderArtistDetails(subs){
   window._artistSubs=subs;
+  const el=document.getElementById('artist-details');
+  const archived = subs.filter(s=>s.archived);
+  const active = subs.filter(s=>!s.archived);
+  const panel = archived.length ? (window._artistDetailsPanel||'current') : 'current';
+  const tabsHtml = archived.length ? `
+    <div class="filter-bar">
+      <button class="btn btn-sm ${panel==='current'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('current')">Current Submissions (${active.length})</button>
+      <button class="btn btn-sm ${panel==='archived'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('archived')">📁 Archived Work (${archived.length})</button>
+    </div>` : '';
+  const listToShow = panel==='archived' ? archived : active;
+  const bodyHtml = listToShow.length
+    ? listToShow.map(sub=>renderOneArtistSubCard(sub, panel==='archived')).join('')
+    : `<div class="empty-state"><h3>${panel==='archived'?'No archived work.':'No current submissions.'}</h3></div>`;
+  el.innerHTML = tabsHtml + bodyHtml;
   if(_isAdmin && subs.length){
     const uniqueEmails=new Set(subs.map(s=>s.artist?.email));
     const titleEl=document.querySelector('#view-artist .page-title');
     if(titleEl) titleEl.textContent = uniqueEmails.size===1 ? (subs[0].artist?.name||'Artist Submissions') : 'Search Results';
   }
 }
+window.switchArtistDetailsPanel = function(panel){
+  window._artistDetailsPanel = panel;
+  renderArtistDetails(window._artistSubs||[]);
+};
+window.restoreFromArtistView = function(id, email){
+  window._unarchiveReturn = function(){ lookupArtist(email); };
+  unarchiveSubmission(id);
+};
 window.editSubmission=function(id){
   const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
   window._editSub=sub; window._editImages=[...(sub.images||[])]; window._editNewImages=[];
@@ -1969,9 +1993,12 @@ function renderAdmin(){
   const v=document.getElementById('view-admin');
   const pendingCount = _adminSubs.filter(s=>s.status==='pending').length;
   const reviewedCount = _adminSubs.filter(s=>s.status==='approved'||s.status==='rejected').length;
+  const withdrawnCount = _adminSubs.filter(s=>s.status==='withdrawn').length;
   const filtered = _adminFilter==='pending'
     ? _adminSubs.filter(s=>s.status==='pending')
-    : _adminSubs.filter(s=>s.status==='approved'||s.status==='rejected');
+    : _adminFilter==='withdrawn'
+      ? _adminSubs.filter(s=>s.status==='withdrawn')
+      : _adminSubs.filter(s=>s.status==='approved'||s.status==='rejected');
   let html=`
     <div class="page-title">Admin Review</div>
     <div class="page-sub">Review submissions, set commissions, and publish to Shopify.</div>
@@ -1982,6 +2009,7 @@ function renderAdmin(){
     <div class="filter-bar">
       <button class="btn btn-sm ${_adminFilter==='pending'?'btn-primary':'btn-secondary'}" onclick="setFilter('pending')">Awaiting Review (${pendingCount})</button>
       <button class="btn btn-sm ${_adminFilter==='reviewed'?'btn-primary':'btn-secondary'}" onclick="setFilter('reviewed')">Previously Reviewed (${reviewedCount})</button>
+      <button class="btn btn-sm ${_adminFilter==='withdrawn'?'btn-primary':'btn-secondary'}" onclick="setFilter('withdrawn')">Withdrawn (${withdrawnCount})</button>
     </div>`;
   if(!filtered.length) html+='<div class="empty-state"><h3>No submissions to show.</h3></div>';
   filtered.forEach(sub=>{
@@ -2046,8 +2074,8 @@ function renderAdmin(){
         ${al?`<div class="audit-log"><div class="audit-title">Audit Trail</div>${al}</div>`:''}
       </div>`:''}
       <div class="admin-actions">
-        ${sub.status!=='approved'?`<button class="btn btn-sm btn-success" onclick="setStatus('${sub.id}','approved')">✓ Approve</button>`:''}
-        ${sub.status!=='rejected'?`<button class="btn btn-sm btn-danger" onclick="setStatus('${sub.id}','rejected')">✗ Reject</button>`:''}
+        ${sub.status!=='approved'&&sub.status!=='withdrawn'?`<button class="btn btn-sm btn-success" onclick="setStatus('${sub.id}','approved')">✓ Approve</button>`:''}
+        ${sub.status!=='rejected'&&sub.status!=='withdrawn'?`<button class="btn btn-sm btn-danger" onclick="setStatus('${sub.id}','rejected')">✗ Reject</button>`:''}
         ${sub.status==='approved'&&!sub.shopifyId?`<button class="btn btn-sm btn-shopify" onclick="showShopifyModal('${sub.id}')">→ Push to Shopify</button>`:''}
         ${sub.shopifyId?`<span style="font-size:12px;color:var(--success);font-weight:700">✓ Live on Shopify (${sub.shopifyId})</span>`:''}
         <button class="btn btn-sm btn-secondary" onclick="adminEditSubmission('${sub.id}')">✎ Edit</button>
@@ -2987,18 +3015,24 @@ window.setUserRole = async function(docId, role) {
 // ARCHIVE
 // ─────────────────────────────────────────
 window.archiveSubmission = async function(id) {
-  if(!confirm('Archive this submission? It will move to the Archive tab and be hidden from Admin Review.')) return;
-  const now = nowStr();
   const sub = _adminSubs.find(s=>s.id===id);
-  const newLog = [...(sub?.auditLog||[]), {ts:now, by:'Admin', note:'Archived'}];
+  const wasLive = !!sub?.shopifyId;
+  const msg = 'Archive this submission?'
+    + (wasLive ? '\n\nThis will also clear its "Live on Shopify" flag — only archive once the listing has actually been removed from Shopify.' : '')
+    + '\n\nIt will move to the Archive tab, be hidden from Admin Review, and drop off this artist\'s list of current work.';
+  if(!confirm(msg)) return;
+  const now = nowStr();
+  const note = 'Archived' + (wasLive ? ` — Shopify listing (${sub.shopifyId}) marked removed` : '');
+  const newLog = [...(sub?.auditLog||[]), {ts:now, by:'Admin', note}];
   try {
-    await updateDoc(doc(db,'submissions',id), { archived:true, archivedAt:now, auditLog:newLog });
+    await updateDoc(doc(db,'submissions',id), { archived:true, archivedAt:now, auditLog:newLog, shopifyId:null });
     _adminSubs = _adminSubs.filter(s=>s.id!==id);
     renderAdmin();
   } catch(e) { alert('Error archiving: '+e.message); }
 };
 
 async function loadArchive() {
+  window._unarchiveReturn = loadArchive;
   const v = document.getElementById('set-panel-archive');
   v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading archive…</div>';
   try {
@@ -3032,7 +3066,7 @@ async function loadArchive() {
 window.unarchiveSubmission = async function(id) {
   try {
     await updateDoc(doc(db,'submissions',id), { archived:false, archivedAt:null });
-    loadArchive();
+    (window._unarchiveReturn || loadArchive)();
   } catch(e) { alert('Error: '+e.message); }
 };
 
