@@ -375,6 +375,11 @@ function fmt(n) { if(n===undefined||n===null||n==='')return'—'; const x=parseF
 function wc(str) { return !str||str.trim()===''?0:str.trim().split(/\s+/).length; }
 const is3D = c => ['Sculpture','Ceramic'].includes(c);
 const is2D = c => ['Painting','Photograph','Print'].includes(c);
+// Total units tracked for a piece: One Off is always 1; for Limited/Open Edition it's
+// whatever "Available to Order" was set to (falls back to 1 if that was left blank, so an
+// edition piece with no stock count entered behaves like a single unit rather than "infinite").
+function pieceStockTotal(sub){ const p=sub?.piece||{}; return p.edition==='One Off' ? 1 : (parseInt(p.numOrder)||1); }
+function pieceSoldCount(sub, salesMap){ return ((salesMap&&salesMap[sub.id])||[]).length; }
 function esc(s) { return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 window._pendingImages = [];
@@ -1265,7 +1270,8 @@ window.lookupArtist = async function(email){
     if(snap.empty){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submission found for that artist.</div>';document.getElementById('artist-details').innerHTML='';return;}
     res.innerHTML='';
     const subs=[]; snap.forEach(d=>subs.push({id:d.id,...d.data()}));
-    renderArtistDetails(subs);
+    const salesMap = await fetchSalesMap([email]);
+    renderArtistDetails(subs, salesMap);
   }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
 };
 window.lookupArtistByName = async function(){
@@ -1287,11 +1293,32 @@ window.lookupArtistByName = async function(){
     });
     if(!subs.length){res.innerHTML='<div class="alert alert-warn" style="margin-top:1rem">No submissions found matching that name.</div>';document.getElementById('artist-details').innerHTML='';return;}
     res.innerHTML='';
-    renderArtistDetails(subs);
+    const salesMap = await fetchSalesMap(subs.map(s=>s.artist?.email));
+    renderArtistDetails(subs, salesMap);
   }catch(err){res.innerHTML=`<div class="alert alert-danger" style="margin-top:1rem">Error: ${err.message}</div>`;}
 };
 
+// Builds { submissionId: [saleRecord, ...] } for the given artist email(s), so the artist
+// detail view can split their pieces into Live / Sold / Archived without a separate lookup.
+async function fetchSalesMap(emails){
+  const uniqueEmails=[...new Set((emails||[]).filter(Boolean).map(e=>e.toLowerCase().trim()))];
+  const map={};
+  if(!uniqueEmails.length) return map;
+  try{
+    for(let i=0;i<uniqueEmails.length;i+=30){
+      const chunk=uniqueEmails.slice(i,i+30);
+      const snap=await getDocs(query(collection(db,'sale_notifications'),where('artistEmail','in',chunk)));
+      snap.forEach(d=>{
+        const data={id:d.id,...d.data()};
+        if(data.submissionId){ (map[data.submissionId]=map[data.submissionId]||[]).push(data); }
+      });
+    }
+  }catch(e){ console.warn('Could not load sales for artist view:', e); }
+  return map;
+}
+
 function renderSalesPortal(prefillEmail){
+  window._salesRefreshReturn = null;
   const lookupBlock = _isAdmin ? `<div class="card">
       <div class="lookup-row">
         <input id="sales-lookup-name" type="text" placeholder="Artist's name (any part of first or last name)" onkeydown="if(event.key==='Enter')lookupSalesByName()"/>
@@ -1376,7 +1403,7 @@ window.confirmBuyerContacted = async function(saleId){
         salePrice: fmt(sale.salePrice), createdAt: serverTimestamp(), status:'pending'
       });
     }catch(e){ console.warn('Buyer-contacted alert failed to queue:', e); }
-    lookupSales(sale.artistEmail);
+    (window._salesRefreshReturn || lookupSales)(sale.artistEmail);
   }catch(e){ alert('Error: '+e.message); }
 };
 
@@ -1464,7 +1491,7 @@ async function finalizeFulfillment(sale){
   const invRef = await addDoc(collection(db,'invoices'), invoice);
   const invoiceLink = window.location.origin + window.location.pathname + '?tab=invoices&invoice=' + invRef.id;
   await sendInvoiceEmail(invoice, invoiceLink);
-  lookupSales(sale.artistEmail);
+  (window._salesRefreshReturn || lookupSales)(sale.artistEmail);
 }
 
 async function sendInvoiceEmail(invoice, invoiceLink){
@@ -1683,12 +1710,15 @@ function renderOneArtistSubCard(sub, isArchived){
             : `<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`)
       }
       ${sub.status!=='withdrawn'&&sub.status!=='rejected'?`<button class="btn btn-danger btn-sm" onclick="withdrawSubmission('${sub.id}')">Withdraw</button>`:''}`;
+  const soldCount = isArchived ? 0 : pieceSoldCount(sub, window._artistSalesMap||{});
+  const stockTotal = pieceStockTotal(sub);
   return `<div class="card" style="border-left:4px solid ${sc}">
       <div class="sub-header">
         <div><div class="sub-artist">${esc(sub.piece.name)}</div><div class="sub-piece">${esc(sub.artist?.name||'')} &middot; ${sub.category}</div></div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
           <span class="badge badge-${sub.status}">${sub.status.charAt(0).toUpperCase()+sub.status.slice(1)}</span>
           ${isArchived?`<span class="badge" style="background:var(--gray-bg);color:var(--gray-text);border:1px solid var(--gray-border)">📁 Archived${sub.archivedAt?' '+esc(sub.archivedAt):''}</span>`:(sub.shopifyId?'<span class="shopify-tag">Live on Shopify</span>':'')}
+          ${soldCount>0?`<span class="badge" style="background:#fef4e2;color:#a05c10;border:1px solid #f5cc80">💰 ${soldCount} sold · ${Math.max(0,stockTotal-soldCount)} left</span>`:''}
         </div>
       </div>
       <div class="detail-grid">
@@ -1706,21 +1736,52 @@ function renderOneArtistSubCard(sub, isArchived){
       ${al?`<div class="audit-log" style="margin-top:1rem"><div class="audit-title">History</div>${al}</div>`:''}
     </div>`;
 }
-function renderArtistDetails(subs){
+function renderOneSoldSubCard(sub, sales){
+  const piece = sub.piece||{};
+  const artistEmail = sub.artist?.email||'';
+  const saleBlocks = (sales||[]).map((s,i)=>`
+      <div class="detail-grid" style="${i?'margin-top:0.9rem;padding-top:0.9rem;border-top:1px solid var(--gray-border)':''}">
+        <div><div class="detail-label">Sold To</div><div class="detail-value">${esc(s.buyerName||'—')}</div></div>
+        <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(s.salePrice)}</div></div>
+        <div><div class="detail-label">Buyer Email</div><div class="detail-value">${esc(s.buyerEmail||'—')}</div></div>
+        <div><div class="detail-label">Sold</div><div class="detail-value">${esc(s.notifiedAt||'—')}</div></div>
+      </div>
+      <div style="margin-top:0.6rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContactedFromArtistView('${s.id}','${esc(artistEmail)}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
+        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilledFromArtistView('${s.id}','${esc(artistEmail)}')">Mark as Fulfilled</button>`:'<span style="font-size:12px;color:var(--success);font-weight:700">✓ Fulfilled</span>'}
+      </div>`).join('');
+  return `<div class="card" style="border-left:4px solid #2a7a50">
+      <div class="sub-header">
+        <div><div class="sub-artist">${esc(piece.name||'')}</div><div class="sub-piece">${esc(sub.artist?.name||'')} &middot; ${sub.category}</div></div>
+        <span class="badge badge-approved">💰 Sold${(sales||[]).length>1?' ×'+sales.length:''}</span>
+      </div>
+      ${saleBlocks}
+    </div>`;
+}
+function renderArtistDetails(subs, salesMap){
   window._artistSubs=subs;
+  if(salesMap) window._artistSalesMap=salesMap;
+  salesMap = window._artistSalesMap||{};
   const el=document.getElementById('artist-details');
   const archived = subs.filter(s=>s.archived);
-  const active = subs.filter(s=>!s.archived);
+  // A piece can be in both buckets at once: an edition with 3 of 10 sold stays in Live Work
+  // (7 remain to sell) while also showing under Sold Work (the 3 sale records). A One Off
+  // piece only ever has 1 unit, so a single sale removes it from Live Work as before.
+  const sold = subs.filter(s=>!s.archived && pieceSoldCount(s,salesMap)>0);
+  const active = subs.filter(s=>!s.archived && (pieceStockTotal(s) - pieceSoldCount(s,salesMap)) > 0);
   const panel = window._artistDetailsPanel||'current';
   const tabsHtml = `
     <div class="filter-bar">
       <button class="btn btn-sm ${panel==='current'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('current')">Live Work (${active.length})</button>
+      <button class="btn btn-sm ${panel==='sold'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('sold')">💰 Sold Work (${sold.length})</button>
       <button class="btn btn-sm ${panel==='archived'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('archived')">📁 Archive (${archived.length})</button>
     </div>`;
-  const listToShow = panel==='archived' ? archived : active;
+  const listToShow = panel==='archived' ? archived : panel==='sold' ? sold : active;
   const bodyHtml = listToShow.length
-    ? listToShow.map(sub=>renderOneArtistSubCard(sub, panel==='archived')).join('')
-    : `<div class="empty-state"><h3>${panel==='archived'?'No archived work yet.':'No live work.'}</h3></div>`;
+    ? (panel==='sold'
+        ? listToShow.map(sub=>renderOneSoldSubCard(sub, salesMap[sub.id])).join('')
+        : listToShow.map(sub=>renderOneArtistSubCard(sub, panel==='archived')).join(''))
+    : `<div class="empty-state"><h3>${panel==='archived'?'No archived work yet.':panel==='sold'?'No sold work yet.':'No live work.'}</h3></div>`;
   el.innerHTML = tabsHtml + bodyHtml;
   if(_isAdmin && subs.length){
     const uniqueEmails=new Set(subs.map(s=>s.artist?.email));
@@ -1739,6 +1800,14 @@ window.restoreFromArtistView = function(id, email){
 window.archiveFromArtistView = function(id, email){
   window._archiveReturn = function(){ lookupArtist(email); };
   archiveSubmission(id);
+};
+window.confirmBuyerContactedFromArtistView = function(saleId, email){
+  window._salesRefreshReturn = function(){ lookupArtist(email); };
+  confirmBuyerContacted(saleId);
+};
+window.markFulfilledFromArtistView = function(saleId, email){
+  window._salesRefreshReturn = function(){ lookupArtist(email); };
+  markFulfilled(saleId);
 };
 window.editSubmission=function(id){
   const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
