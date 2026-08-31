@@ -1676,7 +1676,8 @@ function renderOneArtistSubCard(sub, isArchived){
   const actions = isArchived
     ? (_isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="restoreFromArtistView('${sub.id}','${esc(sub.artist?.email||'')}')">↩ Restore</button>` : '')
     : `${_isAdmin
-        ? `<button class="btn btn-secondary btn-sm" onclick="adminEditFromArtistView('${sub.id}')">✎ Edit as Admin</button>`
+        ? `<button class="btn btn-secondary btn-sm" onclick="adminEditFromArtistView('${sub.id}')">✎ Edit as Admin</button>
+           <button class="archive-btn" onclick="archiveFromArtistView('${sub.id}','${esc(sub.artist?.email||'')}')">📁 Archive</button>`
         : (!sub.shopifyId
             ? `<button class="btn btn-secondary btn-sm" onclick="editSubmission('${sub.id}')">Edit My Submission</button>`
             : `<button class="btn btn-secondary btn-sm" onclick="requestEditForm('${sub.id}')">✉ Request Edit</button>`)
@@ -1710,16 +1711,16 @@ function renderArtistDetails(subs){
   const el=document.getElementById('artist-details');
   const archived = subs.filter(s=>s.archived);
   const active = subs.filter(s=>!s.archived);
-  const panel = archived.length ? (window._artistDetailsPanel||'current') : 'current';
-  const tabsHtml = archived.length ? `
+  const panel = window._artistDetailsPanel||'current';
+  const tabsHtml = `
     <div class="filter-bar">
-      <button class="btn btn-sm ${panel==='current'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('current')">Current Submissions (${active.length})</button>
-      <button class="btn btn-sm ${panel==='archived'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('archived')">📁 Archived Work (${archived.length})</button>
-    </div>` : '';
+      <button class="btn btn-sm ${panel==='current'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('current')">Live Work (${active.length})</button>
+      <button class="btn btn-sm ${panel==='archived'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('archived')">📁 Archive (${archived.length})</button>
+    </div>`;
   const listToShow = panel==='archived' ? archived : active;
   const bodyHtml = listToShow.length
     ? listToShow.map(sub=>renderOneArtistSubCard(sub, panel==='archived')).join('')
-    : `<div class="empty-state"><h3>${panel==='archived'?'No archived work.':'No current submissions.'}</h3></div>`;
+    : `<div class="empty-state"><h3>${panel==='archived'?'No archived work yet.':'No live work.'}</h3></div>`;
   el.innerHTML = tabsHtml + bodyHtml;
   if(_isAdmin && subs.length){
     const uniqueEmails=new Set(subs.map(s=>s.artist?.email));
@@ -1734,6 +1735,10 @@ window.switchArtistDetailsPanel = function(panel){
 window.restoreFromArtistView = function(id, email){
   window._unarchiveReturn = function(){ lookupArtist(email); };
   unarchiveSubmission(id);
+};
+window.archiveFromArtistView = function(id, email){
+  window._archiveReturn = function(){ lookupArtist(email); };
+  archiveSubmission(id);
 };
 window.editSubmission=function(id){
   const sub=(window._artistSubs||[]).find(s=>s.id===id); if(!sub)return;
@@ -1979,6 +1984,7 @@ let _adminFilter='pending', _adminSubs=[], _expandedId=null, _adminLoaded=false;
 // previously each tab only ever fetched its own status, so whichever tab you weren't on
 // showed a count of 0 rather than the real number.
 async function loadAdmin(){
+  window._archiveReturn = renderAdmin;
   if(_adminLoaded){ renderAdmin(); return; }
   const v=document.getElementById('view-admin');
   v.innerHTML='<div class="loading-state"><div class="spinner"></div> Loading…</div>';
@@ -3015,11 +3021,11 @@ window.setUserRole = async function(docId, role) {
 // ARCHIVE
 // ─────────────────────────────────────────
 window.archiveSubmission = async function(id) {
-  const sub = _adminSubs.find(s=>s.id===id);
+  const sub = _adminSubs.find(s=>s.id===id) || (window._artistSubs||[]).find(s=>s.id===id);
   const wasLive = !!sub?.shopifyId;
   const msg = 'Archive this submission?'
     + (wasLive ? '\n\nThis will also clear its "Live on Shopify" flag — only archive once the listing has actually been removed from Shopify.' : '')
-    + '\n\nIt will move to the Archive tab, be hidden from Admin Review, and drop off this artist\'s list of current work.';
+    + '\n\nIt will move to the Archive tab, be hidden from Admin Review, and drop off this artist\'s Live Work list.';
   if(!confirm(msg)) return;
   const now = nowStr();
   const note = 'Archived' + (wasLive ? ` — Shopify listing (${sub.shopifyId}) marked removed` : '');
@@ -3027,7 +3033,7 @@ window.archiveSubmission = async function(id) {
   try {
     await updateDoc(doc(db,'submissions',id), { archived:true, archivedAt:now, auditLog:newLog, shopifyId:null });
     _adminSubs = _adminSubs.filter(s=>s.id!==id);
-    renderAdmin();
+    (window._archiveReturn || renderAdmin)();
   } catch(e) { alert('Error archiving: '+e.message); }
 };
 
