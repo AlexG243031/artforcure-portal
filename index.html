@@ -3380,7 +3380,7 @@ async function renderGrantsMadeHub(){
   const el = document.getElementById('trustee-panel-grants-made');
   el.innerHTML = `
     <div class="page-title">Grants Made</div>
-    <div class="page-sub">Running total of grants approved by trustees, by the date of the trustee meeting at which each was decided — starting 1 August 2026.</div>
+    <div class="page-sub">Running total of grants approved by trustees, by the date of the trustee meeting at which each was decided — starting 1 August 2026. Most recent first.</div>
     <div id="grants-made-body"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
   try{
     const snap = await getDocs(query(collection(db,'grant_applications'), where('status','==','approved')));
@@ -3388,27 +3388,36 @@ async function renderGrantsMadeHub(){
     cacheGrants(items);
     const dated = items.filter(a=>a.meetingDateMs && a.meetingDateMs>=GRANTS_MADE_CUTOFF_MS);
     const undated = items.filter(a=>!a.meetingDateMs || a.meetingDateMs<GRANTS_MADE_CUTOFF_MS);
+    // Compute the running total chronologically (oldest first) — that's the only order
+    // in which "running total" is meaningful — then reverse for display so the most
+    // recent grant, with the up-to-date total, is at the top of a long list.
     dated.sort((a,b)=>(a.meetingDateMs||0)-(b.meetingDateMs||0));
+    let running = 0;
+    const computed = dated.map(a=>{
+      const counts = a.countsInTotal !== false;
+      if(counts) running += parseFloat(a.decisionAmount)||0;
+      return { a, counts, runningAfter: running };
+    });
+    const grandTotal = running;
+    const counted = computed.filter(c=>c.counts).length;
+    const linked = computed.filter(c=>!c.counts).length;
     const body = document.getElementById('grants-made-body');
-    if(!dated.length){
+    if(!computed.length){
       body.innerHTML = '<div class="empty-state"><h3>No grants made since 1 Aug 2026 yet.</h3><p style="margin-top:6px;font-size:13px">Approved applications will appear here once a trustee meeting date has been recorded.</p></div>';
       return;
     }
-    let running = 0;
-    const rows = dated.map(a=>{
-      running += parseFloat(a.decisionAmount)||0;
-      return `<tr style="border-bottom:1px solid var(--gray-border)">
+    const rows = computed.slice().reverse().map(({a,counts,runningAfter})=>`
+      <tr style="border-bottom:1px solid var(--gray-border)${counts?'':';opacity:.6'}">
         <td style="padding:8px 10px">${formatIsoDate(a.meetingDate)}</td>
-        <td style="padding:8px 10px;font-weight:700;color:var(--dark)">${esc(a.orgName||'—')}</td>
+        <td style="padding:8px 10px;font-weight:700;color:var(--dark)">${esc(a.orgName||'—')}${!counts?' <span class="badge badge-withdrawn" style="font-weight:400">Linked — not counted</span>':''}</td>
         <td style="padding:8px 10px;text-align:right">${fmt(a.decisionAmount)}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(running)}</td>
-      </tr>`;
-    }).join('');
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(runningAfter)}</td>
+      </tr>`).join('');
     let html = `
       <div class="card" style="margin-bottom:16px">
         <div class="detail-label">Total granted since 1 Aug 2026</div>
-        <div class="cost-value" style="font-size:28px">${fmt(running)}</div>
-        <div style="font-size:13px;color:var(--gray-text);margin-top:4px">${dated.length} grant${dated.length!==1?'s':''}</div>
+        <div class="cost-value" style="font-size:28px">${fmt(grandTotal)}</div>
+        <div style="font-size:13px;color:var(--gray-text);margin-top:4px">${counted} grant${counted!==1?'s':''} counted${linked?` · ${linked} linked application${linked!==1?'s':''} shown but not counted separately`:''}</div>
       </div>
       <div class="card" style="padding:0;overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3462,6 +3471,7 @@ function renderOneGrantCard(a){
 
 window.editGrantMeetingDate = function(id){
   const a = window._grantsCache[id]; if(!a) return;
+  const isApproved = a.status==='approved';
   document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-bg" id="grant-meetingdate-modal" onclick="if(event.target.id==='grant-meetingdate-modal')closeGrantMeetingDateModal()">
       <div class="modal">
@@ -3471,6 +3481,11 @@ window.editGrantMeetingDate = function(id){
           <label>Date of trustee meeting</label>
           <input type="date" id="grant-meetingdate-input" value="${a.meetingDate||nowIsoDate()}"/>
         </div>
+        ${isApproved?`
+          <label style="font-size:13px;color:var(--gray-text);display:flex;align-items:flex-start;gap:8px;margin-bottom:14px">
+            <input type="checkbox" id="grant-meetingdate-counts" ${a.countsInTotal===false?'':'checked'} style="margin-top:3px"/>
+            <span>Count this amount separately in the Grants Made running total.<br>Untick if this money is already counted via a linked application — e.g. several linked applications funded together as one combined grant, where only one of them should be added to the total.</span>
+          </label>`:''}
         <div id="grant-meetingdate-error"></div>
         <div class="modal-actions">
           <button class="btn btn-secondary" onclick="closeGrantMeetingDateModal()">Cancel</button>
@@ -3487,7 +3502,10 @@ window.confirmGrantMeetingDate = async function(id){
   if(!meetingDate){ if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Please choose a date.</div>'; return; }
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
-    await updateDoc(doc(db,'grant_applications',id), { meetingDate, meetingDateMs: new Date(meetingDate+'T00:00:00').getTime() });
+    const update = { meetingDate, meetingDateMs: new Date(meetingDate+'T00:00:00').getTime() };
+    const countsEl = document.getElementById('grant-meetingdate-counts');
+    if(countsEl) update.countsInTotal = !!countsEl.checked;
+    await updateDoc(doc(db,'grant_applications',id), update);
     closeGrantMeetingDateModal();
     if(document.getElementById('trustee-panel-grants-live') && document.getElementById('trustee-panel-grants-live').style.display!=='none') renderGrantsLiveHub();
     else renderGrantsPreviousHub();
@@ -3556,7 +3574,11 @@ window.showGrantDecisionModal = function(id, decision){
           <div class="field">
             <label>Amount granted (£)</label>
             <input type="number" id="grant-decision-amount" value="${a.amountRequested||''}" min="0" step="0.01"/>
-          </div>`:''}
+          </div>
+          <label style="font-size:13px;color:var(--gray-text);display:flex;align-items:flex-start;gap:8px;margin-bottom:14px">
+            <input type="checkbox" id="grant-decision-counts" checked style="margin-top:3px"/>
+            <span>Count this amount separately in the Grants Made running total.<br>Untick if this money is already counted via a linked application — e.g. several linked applications funded together as one combined grant, where only one of them should be added to the total.</span>
+          </label>`:''}
         <div class="field">
           <label>${isDefer?"Why it's being deferred / what's needed first":'Terms, conditions or notes (optional)'}</label>
           <textarea id="grant-decision-note" rows="3" placeholder="${isApprove?'e.g. conditional on…, paid as a reserve rather than in full, follow-up report required…':isDefer?'e.g. awaiting ethics approval, site visit needed before reconsidering…':'Any note for the record…'}"></textarea>
@@ -3588,7 +3610,11 @@ window.confirmGrantDecision = async function(id, decision){
       status:decision, decisionNote:note, decidedAt:nowStr(), decidedAtMs:Date.now(), decidedBy:_currentUser?.email||'',
       meetingDate, meetingDateMs: new Date(meetingDate+'T00:00:00').getTime()
     };
-    if(decision==='approved') update.decisionAmount = amountEl ? (parseFloat(amountEl.value)||0) : 0;
+    if(decision==='approved'){
+      update.decisionAmount = amountEl ? (parseFloat(amountEl.value)||0) : 0;
+      const countsEl = document.getElementById('grant-decision-counts');
+      update.countsInTotal = countsEl ? !!countsEl.checked : true;
+    }
     await updateDoc(doc(db,'grant_applications',id), update);
     closeGrantDecisionModal();
     renderGrantsLiveHub();
