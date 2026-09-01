@@ -3298,20 +3298,165 @@ async function renderMinutesHub(){
   }catch(e){ document.getElementById('minutes-list').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
 
-// Grant Applications — the application form itself is separate future work; these are
-// placeholder tabs so the Trustee menu is complete and ready for it.
-function renderGrantsLiveHub(){
-  document.getElementById('view-grants-live').innerHTML = `
-    <div class="page-title">Live Grant Applications</div>
-    <div class="page-sub">Grant applications currently under consideration.</div>
-    <div class="empty-state"><h3>Coming soon</h3><p style="margin-top:6px;font-size:13px">The grant application form and workflow haven't been built yet — applications will appear here once that's in place, and move to Previous Grant Applications once a decision has been made.</p></div>`;
+// ─────────────────────────────────────────
+// GRANT APPLICATIONS (Trustees + Admins)
+// ─────────────────────────────────────────
+// Applications are submitted publicly (no login) via apply.html, which writes
+// a doc with status:'live' to the grant_applications collection. Trustees review
+// them here and record a decision at/after a trustee meeting, which moves the
+// application into Previous Grant Applications.
+window._grantsCache = window._grantsCache || {};
+function cacheGrants(items){ items.forEach(a=>{ window._grantsCache[a.id]=a; }); }
+function grantStatusBadge(status){
+  if(status==='approved') return '<span class="badge badge-approved">Approved</span>';
+  if(status==='declined') return '<span class="badge badge-rejected">Declined</span>';
+  return '<span class="badge badge-pending">Live</span>';
 }
-function renderGrantsPreviousHub(){
-  document.getElementById('view-grants-previous').innerHTML = `
+
+async function renderGrantsLiveHub(){
+  const el = document.getElementById('view-grants-live');
+  el.innerHTML = `
+    <div class="page-title">Live Grant Applications</div>
+    <div class="page-sub">Grant applications currently under consideration. Review these ahead of the next trustee meeting, then record the decision made.</div>
+    <div id="grants-live-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
+  try{
+    const snap = await getDocs(query(collection(db,'grant_applications'), where('status','==','live')));
+    const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
+    items.sort((a,b)=>(b.submittedAtMs||0)-(a.submittedAtMs||0));
+    cacheGrants(items);
+    const list=document.getElementById('grants-live-list');
+    if(!items.length){ list.innerHTML='<div class="empty-state"><h3>No live applications.</h3><p style="margin-top:6px;font-size:13px">New applications submitted through the website will appear here.</p></div>'; return; }
+    list.innerHTML = items.map(renderOneGrantCard).join('');
+  }catch(e){ document.getElementById('grants-live-list').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+
+async function renderGrantsPreviousHub(){
+  const el = document.getElementById('view-grants-previous');
+  el.innerHTML = `
     <div class="page-title">Previous Grant Applications</div>
     <div class="page-sub">Grant applications where a decision has already been made.</div>
-    <div class="empty-state"><h3>Coming soon</h3><p style="margin-top:6px;font-size:13px">Once the grant application form is built, decided applications will move here automatically.</p></div>`;
+    <div id="grants-previous-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
+  try{
+    const snap = await getDocs(query(collection(db,'grant_applications'), where('status','in',['approved','declined'])));
+    const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
+    items.sort((a,b)=>(b.decidedAtMs||0)-(a.decidedAtMs||0));
+    cacheGrants(items);
+    const list=document.getElementById('grants-previous-list');
+    if(!items.length){ list.innerHTML='<div class="empty-state"><h3>No decided applications yet.</h3></div>'; return; }
+    list.innerHTML = items.map(renderOneGrantCard).join('');
+  }catch(e){ document.getElementById('grants-previous-list').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
+
+function renderOneGrantCard(a){
+  return `
+    <div class="sub-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="sub-artist">${esc(a.orgName||'—')} ${grantStatusBadge(a.status)}</div>
+          <div class="sub-piece">${esc(a.firstName||'')} ${esc(a.surname||'')} · ${esc(a.email||'')}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="detail-label">Requested</div>
+          <div class="cost-value">${fmt(a.amountRequested)}</div>
+        </div>
+      </div>
+      <div class="sub-meta">
+        <div class="sub-meta-item">Submitted <strong>${esc(a.submittedAt||'—')}</strong></div>
+        ${a.status!=='live'?`<div class="sub-meta-item">Decided <strong>${esc(a.decidedAt||'—')}</strong> by <strong>${esc(a.decidedBy||'—')}</strong></div>`:''}
+        ${a.status==='approved'?`<div class="sub-meta-item pink">Amount granted <strong>${fmt(a.decisionAmount)}</strong></div>`:''}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-secondary" onclick="viewGrantDetail('${a.id}')">View Full Application</button>
+        ${a.status==='live'?`
+          <button class="btn btn-sm btn-primary" onclick="showGrantDecisionModal('${a.id}','approved')">Approve</button>
+          <button class="btn btn-sm btn-danger" onclick="showGrantDecisionModal('${a.id}','declined')">Decline</button>
+        `:''}
+      </div>
+    </div>`;
+}
+
+window.viewGrantDetail = function(id){
+  const a = window._grantsCache[id]; if(!a) return;
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="grant-detail-modal" onclick="if(event.target.id==='grant-detail-modal')closeGrantDetailModal()">
+      <div class="modal" style="max-width:640px;max-height:85vh;overflow-y:auto">
+        <h2>${esc(a.orgName||'—')} ${grantStatusBadge(a.status)}</h2>
+        <div class="detail-label" style="margin-top:14px">Contact</div>
+        <div class="detail-value">${esc(a.firstName||'')} ${esc(a.surname||'')} · ${esc(a.email||'')} · ${esc(a.phone||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Organisation address</div>
+        <div class="detail-value">${esc(a.orgAddress||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Charity number</div>
+        <div class="detail-value">${esc(a.charityNumber||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Applied to Art for Cure before?</div>
+        <div class="detail-value">${esc(a.appliedBefore||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Amount requested</div>
+        <div class="detail-value">${fmt(a.amountRequested)}</div>
+        <div class="detail-label" style="margin-top:14px">Core aims / key benefits</div>
+        <div class="detail-value">${esc(a.coreAims||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">What the funding is for</div>
+        <div class="detail-value">${esc(a.fundingDetails||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">People affected annually</div>
+        <div class="detail-value">${esc(a.peopleAffected||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Marketing</div>
+        <div class="detail-value">${esc(a.marketing||'—')}</div>
+        <div class="detail-label" style="margin-top:14px">Website</div>
+        <div class="detail-value">${a.website?`<a href="${esc(a.website)}" target="_blank">${esc(a.website)}</a>`:'—'}</div>
+        ${a.status!=='live'?`
+          <div class="detail-label" style="margin-top:14px">Decision</div>
+          <div class="detail-value">${grantStatusBadge(a.status)} by ${esc(a.decidedBy||'—')} on ${esc(a.decidedAt||'—')}${a.status==='approved'?` — ${fmt(a.decisionAmount)} granted`:''}${a.decisionNote?`<br>${esc(a.decisionNote)}`:''}</div>
+        `:''}
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeGrantDetailModal()">Close</button>
+        </div>
+      </div>
+    </div>`);
+};
+window.closeGrantDetailModal=function(){const m=document.getElementById('grant-detail-modal'); if(m) m.remove();};
+
+window.showGrantDecisionModal = function(id, decision){
+  const a = window._grantsCache[id]; if(!a) return;
+  const isApprove = decision==='approved';
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="grant-decision-modal" onclick="if(event.target.id==='grant-decision-modal')closeGrantDecisionModal()">
+      <div class="modal">
+        <h2>${isApprove?'Approve':'Decline'} application — ${esc(a.orgName||'—')}</h2>
+        <p>Record the decision made at the trustee meeting.</p>
+        ${isApprove?`
+          <div class="field">
+            <label>Amount granted (£)</label>
+            <input type="number" id="grant-decision-amount" value="${a.amountRequested||''}" min="0" step="0.01"/>
+          </div>`:''}
+        <div class="field">
+          <label>Note (optional)</label>
+          <textarea id="grant-decision-note" rows="3" placeholder="Any note for the record…"></textarea>
+        </div>
+        <div id="grant-decision-error"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeGrantDecisionModal()">Cancel</button>
+          <button class="btn ${isApprove?'btn-primary':'btn-danger'}" id="grant-decision-confirm-btn" onclick="confirmGrantDecision('${id}','${decision}')">Confirm ${isApprove?'Approval':'Decline'}</button>
+        </div>
+      </div>
+    </div>`);
+};
+window.closeGrantDecisionModal=function(){const m=document.getElementById('grant-decision-modal'); if(m) m.remove();};
+
+window.confirmGrantDecision = async function(id, decision){
+  const btn=document.getElementById('grant-decision-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const note=(document.getElementById('grant-decision-note')||{}).value||'';
+  const amountEl=document.getElementById('grant-decision-amount');
+  try{
+    const update = { status:decision, decisionNote:note, decidedAt:nowStr(), decidedAtMs:Date.now(), decidedBy:_currentUser?.email||'' };
+    if(decision==='approved') update.decisionAmount = amountEl ? (parseFloat(amountEl.value)||0) : 0;
+    await updateDoc(doc(db,'grant_applications',id), update);
+    closeGrantDecisionModal();
+    renderGrantsLiveHub();
+  }catch(e){
+    const errDiv=document.getElementById('grant-decision-error');
+    if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Error: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent='Confirm '+(decision==='approved'?'Approval':'Decline');}
+  }
+};
 
 // ─────────────────────────────────────────
 // ONE-OFF: import pre-existing manual Shopify listings.

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Grant Application — Art for Cure</title>
+<style>
+  :root {
+    --pink: #e8427a; --pink-light: #fce8f0; --pink-mid: #f0aac8; --pink-dark: #b02e5a;
+    --gray-bg: #faf8f9; --gray-border: #e6dfe3; --gray-text: #6e5c64; --dark: #251a1f; --white: #ffffff;
+    --success: #1a7f4e; --success-bg: #e8f7ef; --success-border: #a8ddc0;
+    --danger: #c0293c; --danger-bg: #fdecee; --danger-border: #f0b4bd;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: var(--font); background: var(--gray-bg); color: var(--dark); min-height: 100vh; margin: 0; padding: 24px 16px 60px; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 28px; }
+  .logo-mark { width: 48px; height: 48px; background: var(--pink); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { font-size: 14px; color: var(--gray-text); line-height: 1.5; }
+  .card { background: var(--white); border: 1px solid var(--gray-border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.25rem; }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--pink-dark); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 1rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--gray-border); }
+  .field { margin-bottom: 1rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: 13px; font-weight: 700; color: var(--dark); margin-bottom: 5px; }
+  .field .hint { font-size: 12px; color: var(--gray-text); margin-bottom: 6px; }
+  .field input, .field select, .field textarea { font-family: var(--font); font-size: 14px; color: var(--dark); background: var(--white); border: 1px solid var(--gray-border); border-radius: 7px; padding: 10px 12px; outline: none; width: 100%; transition: border-color 0.15s, box-shadow 0.15s; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--pink); box-shadow: 0 0 0 3px rgba(232,66,122,0.1); }
+  .field textarea { resize: vertical; min-height: 90px; }
+  .req { color: var(--pink); }
+  .wordcount { font-size: 11px; color: var(--gray-text); text-align: right; margin-top: 4px; }
+  .wordcount.over { color: var(--danger); font-weight: 700; }
+  .radio-row { display: flex; gap: 10px; }
+  .radio-opt { flex: 1; border: 1px solid var(--gray-border); border-radius: 7px; padding: 10px 12px; text-align: center; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; }
+  .radio-opt.selected { border-color: var(--pink); background: var(--pink-light); color: var(--pink-dark); }
+  .btn { padding: 12px 22px; border-radius: 8px; border: none; font-family: var(--font); font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.15s; width: 100%; }
+  .btn-primary { background: var(--pink); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--pink-dark); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .alert { padding: 10px 14px; border-radius: 7px; font-size: 13px; margin-top: 1rem; }
+  .alert-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); }
+  .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .success-screen { text-align: center; padding: 3rem 1.5rem; }
+  .success-screen .tick { width: 56px; height: 56px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px; }
+  .footer-note { font-size: 12px; color: var(--gray-text); text-align: center; margin-top: 1.5rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo-mark">AFC</div>
+    <h1>Grant Application</h1>
+    <div class="sub">Art for Cure provides grants to specific national breast cancer research projects and to services and support for those affected by breast cancer here in East Anglia. Please complete the form below — all applications are presented to our trustees at their next meeting.</div>
+  </div>
+
+  <div id="form-area"></div>
+
+  <div class="footer-note">
+    Art for Cure charity no. 1175161 · Questions? <a href="mailto:belinda@artforcure.org.uk" style="color:var(--pink)">belinda@artforcure.org.uk</a>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw55o",
+  authDomain: "art-for-cure.firebaseapp.com",
+  projectId: "art-for-cure",
+  storageBucket: "art-for-cure.firebasestorage.app",
+  messagingSenderId: "11223551235",
+  appId: "1:11223551235:web:2a4472a2e56530844ced36"
+};
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+function esc(s) { return (s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function wc(str) { return !str || str.trim()==='' ? 0 : str.trim().split(/\s+/).length; }
+function nowStr() { return new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+
+let appliedBefore = null; // 'Yes' | 'No'
+
+const formArea = document.getElementById('form-area');
+formArea.innerHTML = `
+  <form id="grant-form">
+    <div class="card">
+      <div class="section-title">Your Details</div>
+      <div class="field"><label>First name <span class="req">*</span></label><input type="text" id="f-firstName" required/></div>
+      <div class="field"><label>Surname <span class="req">*</span></label><input type="text" id="f-surname" required/></div>
+      <div class="field"><label>Email address <span class="req">*</span></label><input type="email" id="f-email" required/></div>
+      <div class="field"><label>Best number to reach you on <span class="req">*</span></label><input type="tel" id="f-phone" required/></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Your Organisation</div>
+      <div class="field"><label>Organisation name <span class="req">*</span></label><input type="text" id="f-orgName" required/></div>
+      <div class="field"><label>Organisation address <span class="req">*</span></label><textarea id="f-orgAddress" rows="2" required></textarea></div>
+      <div class="field"><label>Charity number</label><div class="hint">Please only add this if applicable.</div><input type="text" id="f-charityNumber"/></div>
+      <div class="field">
+        <label>Have you applied for funding from Art For Cure before? <span class="req">*</span></label>
+        <div class="radio-row">
+          <div class="radio-opt" data-val="Yes" onclick="window.__setApplied('Yes')">Yes</div>
+          <div class="radio-opt" data-val="No" onclick="window.__setApplied('No')">No</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Your Application</div>
+      <div class="field"><label>How much are you requesting? (£GBP) <span class="req">*</span></label><input type="number" id="f-amount" min="0" step="0.01" required/></div>
+      <div class="field">
+        <label>What are the core aims of your organisation/support service and the key benefits to those affected by breast cancer? <span class="req">*</span></label>
+        <div class="hint">200 words max.</div>
+        <textarea id="f-coreAims" rows="4" required></textarea>
+        <div class="wordcount" id="wc-coreAims">0 / 200 words</div>
+      </div>
+      <div class="field">
+        <label>Please give details of what you are requesting funding for / for what period of time, including a clear breakdown of what funds will specifically be used for. <span class="req">*</span></label>
+        <div class="hint">400 words max.</div>
+        <textarea id="f-fundingDetails" rows="6" required></textarea>
+        <div class="wordcount" id="wc-fundingDetails">0 / 400 words</div>
+      </div>
+      <div class="field">
+        <label>How many people affected by breast cancer will be using this service annually?</label>
+        <div class="hint">If this is a service we have donated to before, please list the number of people who have used this service in the past 12 months and how many are affected by breast cancer.</div>
+        <textarea id="f-peopleAffected" rows="3"></textarea>
+      </div>
+      <div class="field"><label>How are you presently marketing this service, or intend to? <span class="req">*</span></label><textarea id="f-marketing" rows="3" required></textarea></div>
+      <div class="field"><label>Do you have a website?</label><div class="hint">If you don't, you can leave this blank.</div><input type="text" id="f-website" placeholder="https://…"/></div>
+    </div>
+
+    <div id="form-error"></div>
+    <button type="submit" class="btn btn-primary" id="submit-btn">Submit Application</button>
+  </form>`;
+
+window.__setApplied = function(val){
+  appliedBefore = val;
+  document.querySelectorAll('.radio-opt').forEach(el => el.classList.toggle('selected', el.dataset.val===val));
+};
+
+function wireWordCount(fieldId, wcId, max){
+  const field = document.getElementById(fieldId);
+  const counter = document.getElementById(wcId);
+  field.addEventListener('input', () => {
+    const n = wc(field.value);
+    counter.textContent = n + ' / ' + max + ' words';
+    counter.classList.toggle('over', n > max);
+  });
+}
+wireWordCount('f-coreAims', 'wc-coreAims', 200);
+wireWordCount('f-fundingDetails', 'wc-fundingDetails', 400);
+
+document.getElementById('grant-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errDiv = document.getElementById('form-error');
+  errDiv.innerHTML = '';
+
+  const data = {
+    firstName: document.getElementById('f-firstName').value.trim(),
+    surname: document.getElementById('f-surname').value.trim(),
+    email: document.getElementById('f-email').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    orgName: document.getElementById('f-orgName').value.trim(),
+    orgAddress: document.getElementById('f-orgAddress').value.trim(),
+    charityNumber: document.getElementById('f-charityNumber').value.trim(),
+    appliedBefore: appliedBefore,
+    amountRequested: parseFloat(document.getElementById('f-amount').value) || 0,
+    coreAims: document.getElementById('f-coreAims').value.trim(),
+    fundingDetails: document.getElementById('f-fundingDetails').value.trim(),
+    peopleAffected: document.getElementById('f-peopleAffected').value.trim(),
+    marketing: document.getElementById('f-marketing').value.trim(),
+    website: document.getElementById('f-website').value.trim()
+  };
+
+  // Validation
+  if(!data.firstName || !data.surname || !data.email || !data.phone || !data.orgName || !data.orgAddress ||
+     !data.appliedBefore || !data.amountRequested || !data.coreAims || !data.fundingDetails || !data.marketing){
+    errDiv.innerHTML = '<div class="alert alert-danger">Please fill in all required fields, including whether you\'ve applied before.</div>';
+    window.scrollTo({top:0, behavior:'smooth'});
+    return;
+  }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)){
+    errDiv.innerHTML = '<div class="alert alert-danger">Please enter a valid email address.</div>';
+    return;
+  }
+  if(wc(data.coreAims) > 200){
+    errDiv.innerHTML = '<div class="alert alert-danger">Please shorten "core aims" to 200 words or fewer.</div>';
+    return;
+  }
+  if(wc(data.fundingDetails) > 400){
+    errDiv.innerHTML = '<div class="alert alert-danger">Please shorten the funding details to 400 words or fewer.</div>';
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try{
+    await addDoc(collection(db, 'grant_applications'), {
+      ...data,
+      status: 'live',
+      submittedAt: nowStr(),
+      submittedAtMs: Date.now()
+    });
+    formArea.innerHTML = `
+      <div class="card success-screen">
+        <div class="tick">✓</div>
+        <h1>Application received</h1>
+        <p class="sub">Thank you, ${esc(data.firstName)}. Your application has been submitted and will be presented to our trustees at their next meeting. We'll be in touch once a decision has been made.</p>
+      </div>`;
+    window.scrollTo({top:0, behavior:'smooth'});
+  }catch(err){
+    errDiv.innerHTML = '<div class="alert alert-danger">Something went wrong submitting your application: '+esc(err.message)+'. Please try again, or email belinda@artforcure.org.uk directly.</div>';
+    btn.disabled = false; btn.textContent = 'Submit Application';
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+});
+</script>
+</body>
+</html>
