@@ -213,6 +213,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
 .user-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; }
 .user-badge-admin { background:var(--pink-light); color:var(--pink-dark); border:1px solid var(--pink-mid); }
 .user-badge-artist { background:var(--success-bg); color:var(--success); border:1px solid var(--success-border); }
+.user-badge-trustee { background:#e8f1fd; color:#1558a0; border:1px solid #9bbfe8; }
 .user-badge-disabled { background:var(--gray-bg); color:var(--gray-text); border:1px solid var(--gray-border); }
 /* Archive & Orders */
 .order-row { background:var(--white); border:1px solid var(--gray-border); border-radius:11px; padding:1.25rem; margin-bottom:0.75rem; transition:box-shadow 0.15s; }
@@ -275,6 +276,9 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
       <button class="nav-tab" id="tab-behalf" style="display:none;" onclick="showTab('behalf')">🎨 Current Artists</button>
       <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
+      <button class="nav-tab" id="tab-minutes" style="display:none;" onclick="showTab('minutes')">📋 Minutes</button>
+      <button class="nav-tab" id="tab-grants-live" style="display:none;" onclick="showTab('grants-live')">📝 Live Grant Applications</button>
+      <button class="nav-tab" id="tab-grants-previous" style="display:none;" onclick="showTab('grants-previous')">🗂 Previous Grant Applications</button>
     </div>
     <div class="user-chip">
       <div class="user-chip-dot"></div>
@@ -293,6 +297,9 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-orders" style="display:none;"></div>
     <div id="view-volunteers" style="display:none;"></div>
     <div id="view-behalf" style="display:none;"></div>
+    <div id="view-minutes" style="display:none;"></div>
+    <div id="view-grants-live" style="display:none;"></div>
+    <div id="view-grants-previous" style="display:none;"></div>
     </div>
 </div>
 
@@ -311,7 +318,7 @@ window.addEventListener('unhandledrejection', e => {
     +'</div>');
 });
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, doc, updateDoc, setDoc, query, where, orderBy, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc, query, where, orderBy, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
@@ -333,6 +340,7 @@ const secondaryAuth = getAuth(secondaryApp);
 // ── Current user state ──
 let _currentUser = null;   // Firebase user object
 let _isAdmin = false;      // true if user has admin role in Firestore
+let _isTrustee = false;    // true if user has the independent `trustee` flag set in Firestore — layers on TOP of role (admin/superadmin), so an admin can also be a trustee
 
 // ── EmailJS — loaded dynamically from Firebase settings ──
 let _emailSettings = null;
@@ -395,7 +403,7 @@ window.closeMobileMenu = function(){
 
 window.showTab = function(tab) {
   closeMobileMenu();
-  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf'].forEach(t=>{
+  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf','minutes','grants-live','grants-previous'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -406,6 +414,9 @@ window.showTab = function(tab) {
   if(tab==='invoices') renderInvoicesPortal(_currentUser?.email);
   if(tab==='behalf') renderBehalfHub();
   if(tab==='artist' && !_isAdmin) lookupArtist(_currentUser?.email);
+  if(tab==='minutes') renderMinutesHub();
+  if(tab==='grants-live') renderGrantsLiveHub();
+  if(tab==='grants-previous') renderGrantsPreviousHub();
 };
 
 window.adminEditSubmission = function(id){
@@ -2248,17 +2259,22 @@ function renderSettingsHub(){
     <div class="filter-bar">
       <button class="btn btn-sm btn-primary" id="set-subtab-settings" onclick="switchSettingsPanel('settings')">Settings</button>
       <button class="btn btn-sm btn-secondary" id="set-subtab-archive" onclick="switchSettingsPanel('archive')">📁 Archive</button>
+      <button class="btn btn-sm btn-secondary" id="set-subtab-minutes" onclick="switchSettingsPanel('minutes')">📋 Minutes</button>
     </div>
     <div id="set-panel-settings"></div>
-    <div id="set-panel-archive" style="display:none;"></div>`;
+    <div id="set-panel-archive" style="display:none;"></div>
+    <div id="set-panel-minutes" style="display:none;"></div>`;
   loadSettings();
 }
 window.switchSettingsPanel = function(panel){
   document.getElementById('set-panel-settings').style.display = panel==='settings'?'':'none';
   document.getElementById('set-panel-archive').style.display = panel==='archive'?'':'none';
+  document.getElementById('set-panel-minutes').style.display = panel==='minutes'?'':'none';
   document.getElementById('set-subtab-settings').className = 'btn btn-sm '+(panel==='settings'?'btn-primary':'btn-secondary');
   document.getElementById('set-subtab-archive').className = 'btn btn-sm '+(panel==='archive'?'btn-primary':'btn-secondary');
+  document.getElementById('set-subtab-minutes').className = 'btn btn-sm '+(panel==='minutes'?'btn-primary':'btn-secondary');
   if(panel==='archive') loadArchive();
+  if(panel==='minutes') loadMinutesAdmin();
 };
 
 async function loadSettings() {
@@ -2447,6 +2463,13 @@ function renderSettings(s, intg={}) {
               <option value="artist">Artist</option>
               <option value="admin">Admin</option>
             </select>
+          </div>
+        </div>
+        <div class="form-row single">
+          <div class="field">
+            <label style="text-transform:none;letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:8px;font-weight:400;color:var(--dark)">
+              <input type="checkbox" id="new-user-trustee" style="width:auto"/> Also a Trustee (sees the separate Minutes / Grant Applications menu, on top of the role above)
+            </label>
           </div>
         </div>
         <div class="form-row single">
@@ -2917,23 +2940,26 @@ window.doForgotPassword = async function() {
   } catch(e) { alert('Could not send reset email: '+e.message); }
 };
 
-async function checkAdminRole(uid) {
+async function fetchUserRoleInfo(uid) {
   try {
     const userDoc = await getDoc(doc(db,'users',uid));
     if(userDoc.exists()) {
       const r = userDoc.data();
-      console.log('User role:', r.role);
-      return r.role==='admin' || r.role==='superadmin';
+      console.log('User role:', r.role, 'trustee:', !!r.trustee);
+      return { role: r.role || 'artist', trustee: !!r.trustee };
     }
     console.warn('No user doc found for uid:', uid);
-  } catch(e) { console.error('checkAdminRole error:', e); }
-  return false;
+  } catch(e) { console.error('fetchUserRoleInfo error:', e); }
+  return { role: 'artist', trustee: false };
 }
 
 onAuthStateChanged(auth, async (user) => {
   if(user) {
     _currentUser = user;
-    _isAdmin = await checkAdminRole(user.uid);
+    const { role, trustee } = await fetchUserRoleInfo(user.uid);
+    _isAdmin = role==='admin' || role==='superadmin';
+    _isTrustee = !!trustee; // independent flag — layers on top of role, so an admin can also be a trustee
+    const isPureTrustee = _isTrustee && !_isAdmin;
      try { await updateDoc(doc(db,'users',user.uid), { lastLoginAt: nowStr() }); } catch(e) { console.warn('Could not record login timestamp (check Firestore rules for users collection):', e.message); }
 
     // Show app, hide login
@@ -2946,11 +2972,16 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('tab-volunteers').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-behalf').style.display = _isAdmin ? '' : 'none';
     document.getElementById('tab-settings').style.display = _isAdmin ? '' : 'none';
-    // Artist-only tabs — hidden from admin, who instead uses "On Behalf of Artist"
-    document.getElementById('tab-submit').style.display = _isAdmin ? 'none' : '';
-    document.getElementById('tab-artist').style.display = _isAdmin ? 'none' : '';
-    document.getElementById('tab-sales').style.display = _isAdmin ? 'none' : '';
-    
+    // Artist-only tabs — hidden from admin (who instead uses "On Behalf of Artist") and from trustees
+    document.getElementById('tab-submit').style.display = (_isAdmin||_isTrustee) ? 'none' : '';
+    document.getElementById('tab-artist').style.display = (_isAdmin||_isTrustee) ? 'none' : '';
+    document.getElementById('tab-sales').style.display = (_isAdmin||_isTrustee) ? 'none' : '';
+    document.getElementById('tab-invoices').style.display = isPureTrustee ? 'none' : '';
+    // Trustee-only tabs — a completely separate menu, hidden from everyone else
+    document.getElementById('tab-minutes').style.display = _isTrustee ? '' : 'none';
+    document.getElementById('tab-grants-live').style.display = _isTrustee ? '' : 'none';
+    document.getElementById('tab-grants-previous').style.display = _isTrustee ? '' : 'none';
+
     // User chip
     const chipName = document.getElementById('user-chip-name');
     if(chipName) chipName.innerHTML = '<strong>'+esc(user.displayName||user.email)+'</strong>';
@@ -2961,18 +2992,21 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('login-error').innerHTML='';
     const btn=document.getElementById('login-btn'); if(btn){btn.disabled=false;btn.textContent='Sign In';}
 
-    // Boot app
-    try { await bootSubmitTab(_isAdmin ? null : user.email); } catch(e) { console.error(e); }
-    try { renderArtistPortal(user.email); } catch(e) { console.error(e); }
-    try { renderSalesPortal(user.email); } catch(e) { console.error(e); }
-    try { if(!_isAdmin) renderInvoicesPortal(user.email); } catch(e) { console.error(e); }
+    // Boot app — pure trustees (no admin/artist role) skip all the artist/admin submission machinery entirely
+    if(!isPureTrustee){
+      try { await bootSubmitTab(_isAdmin ? null : user.email); } catch(e) { console.error(e); }
+      try { renderArtistPortal(user.email); } catch(e) { console.error(e); }
+      try { renderSalesPortal(user.email); } catch(e) { console.error(e); }
+      try { if(!_isAdmin) renderInvoicesPortal(user.email); } catch(e) { console.error(e); }
+    }
     loadEmailSettings().catch(e => console.warn('Settings load error:', e));
 
-    // If artist (not admin), go straight to submit tab
+    // Land on the right tab for this role
     const params = new URLSearchParams(window.location.search);
     const deepLinkTab = params.get('tab');
     const deepLinkInvoice = params.get('invoice');
-    if(_isAdmin && deepLinkTab==='invoices'){
+    if(isPureTrustee) showTab('minutes');
+    else if(_isAdmin && deepLinkTab==='invoices'){
       renderInvoicesPortal(null, deepLinkInvoice);
       showTab('invoices');
     } else if(!_isAdmin && deepLinkTab==='sales') showTab('sales');
@@ -2982,6 +3016,7 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     _currentUser = null;
     _isAdmin = false;
+    _isTrustee = false;
     document.getElementById('login-screen').style.display='';
     document.getElementById('app').style.display='none';
   }
@@ -3006,8 +3041,10 @@ window.renderUserManagement = async function() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="user-badge ${(u.role==='admin'||u.role==='superadmin')?'user-badge-admin':u.disabled?'user-badge-disabled':'user-badge-artist'}">${u.role==='superadmin'?'Super Admin':u.role==='admin'?'Admin':u.disabled?'Disabled':'Artist'}</span>
+          ${u.trustee?`<span class="user-badge user-badge-trustee">Trustee</span>`:''}
           ${u.role!=='superadmin'?`
             ${u.role!=='admin'?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','admin')">Make Admin</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','artist')">Remove Admin</button>`}
+            ${!u.trustee?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',false)">Make Trustee</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',true)">Remove Trustee</button>`}
             <button class="btn btn-sm btn-secondary" onclick="toggleUserDisabled('${u.docId}',${!!u.disabled})">${u.disabled?'Enable':'Disable'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.docId}','${esc(u.email)}')">Remove</button>
           `:''}
@@ -3027,6 +3064,7 @@ window.createArtistAccount = async function() {
   btn.disabled=true; btn.textContent='Creating…';
   errDiv.innerHTML='';
   const role = (document.getElementById('new-user-role')||{}).value||'artist';
+  const trustee = !!(document.getElementById('new-user-trustee')||{}).checked;
   const adminEmail = _currentUser?.email;
   const adminPassword = (document.getElementById('admin-reauth-password')||{}).value||'';
   if(!adminPassword) { errDiv.innerHTML='<div class="alert alert-warn">Enter your admin password below to confirm account creation.</div>'; btn.disabled=false; btn.textContent='Create Account'; return; }
@@ -3041,13 +3079,14 @@ window.createArtistAccount = async function() {
     await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
 
     // Step 3: now write the profile, authenticated as admin.
-    await setDoc(doc(db,'users',newUid), { uid:newUid, name, email:email.toLowerCase(), role, disabled:false, createdAt:nowStr() });
+    await setDoc(doc(db,'users',newUid), { uid:newUid, name, email:email.toLowerCase(), role, trustee, disabled:false, createdAt:nowStr() });
 
     document.getElementById('new-user-name').value='';
     document.getElementById('new-user-email').value='';
     document.getElementById('new-user-password').value='';
     document.getElementById('admin-reauth-password').value='';
-    errDiv.innerHTML='<div class="alert alert-success">✓ Account created for '+esc(name)+' ('+role+'). They can now log in.</div>';
+    const trusteeNote = trustee ? ' + Trustee' : '';
+    errDiv.innerHTML='<div class="alert alert-success">✓ Account created for '+esc(name)+' ('+role+trusteeNote+'). They can now log in.</div>';
     renderUserManagement();
   } catch(e) {
     let msg = e.message;
@@ -3082,6 +3121,13 @@ window.deleteUser = async function(docId, email) {
 window.setUserRole = async function(docId, role) {
   try {
     await updateDoc(doc(db,'users',docId), { role });
+    renderUserManagement();
+  } catch(e) { alert('Error: '+e.message); }
+};
+
+window.toggleUserTrustee = async function(docId, currentlyTrustee) {
+  try {
+    await updateDoc(doc(db,'users',docId), { trustee: !currentlyTrustee });
     renderUserManagement();
   } catch(e) { alert('Error: '+e.message); }
 };
@@ -3144,6 +3190,128 @@ window.unarchiveSubmission = async function(id) {
     (window._unarchiveReturn || loadArchive)();
   } catch(e) { alert('Error: '+e.message); }
 };
+
+// ─────────────────────────────────────────
+// TRUSTEES — Minutes (admin uploads, trustees view) + Grant Applications (stubs for now)
+// ─────────────────────────────────────────
+function formatMeetingDate(iso){
+  if(!iso) return '—';
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d)) return iso;
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'});
+}
+
+// Admin panel: Settings → 📋 Minutes — upload new minutes and manage existing ones.
+async function loadMinutesAdmin(){
+  const v = document.getElementById('set-panel-minutes');
+  v.innerHTML = `
+    <div class="page-title">Minutes</div>
+    <div class="page-sub">Upload trustee meeting minutes as a PDF — trustees see these in date order under their Minutes tab.</div>
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span> Upload New Minutes</div>
+      <div class="form-row">
+        <div class="field"><label>Meeting Title</label><input id="minutes-title" placeholder="e.g. Trustee Meeting"/></div>
+        <div class="field"><label>Meeting Date</label><input id="minutes-date" type="date"/></div>
+      </div>
+      <div class="form-row single">
+        <div class="field"><label>PDF File</label><input id="minutes-file" type="file" accept="application/pdf,.pdf"/></div>
+      </div>
+      <div id="minutes-upload-status"></div>
+      <div style="margin-top:0.75rem"><button class="btn btn-primary btn-sm" id="minutes-upload-btn" onclick="uploadMinutes()">Upload Minutes</button></div>
+    </div>
+    <div id="minutes-admin-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
+  await refreshMinutesAdminList();
+}
+async function refreshMinutesAdminList(){
+  const list = document.getElementById('minutes-admin-list');
+  if(!list) return;
+  try{
+    const snap = await getDocs(query(collection(db,'minutes'), orderBy('meetingDate','desc')));
+    const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
+    if(!items.length){ list.innerHTML='<div class="empty-state"><h3>No minutes uploaded yet.</h3></div>'; return; }
+    list.innerHTML = items.map(m=>`
+      <div class="sub-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div><div class="sub-artist">${esc(m.title||'Trustee Meeting')}</div><div class="sub-piece">${esc(formatMeetingDate(m.meetingDate))}</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${m.fileUrl?`<a class="btn btn-sm btn-secondary" href="${esc(m.fileUrl)}" target="_blank">📄 View PDF</a>`:'<span style="font-size:12px;color:var(--gray-text)">Uploading…</span>'}
+          <button class="btn btn-sm btn-danger" onclick="deleteMinutes('${m.id}')">Delete</button>
+        </div>
+      </div>`).join('');
+  }catch(e){ list.innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+window.uploadMinutes = async function(){
+  const title = (document.getElementById('minutes-title')||{}).value.trim();
+  const meetingDate = (document.getElementById('minutes-date')||{}).value;
+  const fileInput = document.getElementById('minutes-file');
+  const file = fileInput && fileInput.files[0];
+  const status = document.getElementById('minutes-upload-status');
+  if(!meetingDate){ status.innerHTML='<div class="alert alert-warn">Please choose the meeting date.</div>'; return; }
+  if(!file){ status.innerHTML='<div class="alert alert-warn">Please choose a PDF file.</div>'; return; }
+  if(file.type!=='application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){ status.innerHTML='<div class="alert alert-warn">Please choose a PDF file.</div>'; return; }
+  const btn=document.getElementById('minutes-upload-btn'); btn.disabled=true; btn.textContent='Uploading…';
+  status.innerHTML='';
+  try{
+    const docRef = await addDoc(collection(db,'minutes'), {
+      title: title || 'Trustee Meeting', meetingDate, fileName:file.name, fileUrl:'',
+      uploadedAt: nowStr(), uploadedBy: _currentUser?.email || ''
+    });
+    const safeName = 'minutes_'+Date.now()+'.pdf';
+    const path = 'minutes/'+docRef.id+'/'+safeName;
+    const arrayBuf = await file.arrayBuffer();
+    const sRef = ref(storage, path);
+    const uploadSnap = await uploadBytes(sRef, arrayBuf, {contentType:'application/pdf'});
+    const url = await getDownloadURL(uploadSnap.ref);
+    await updateDoc(doc(db,'minutes',docRef.id), { fileUrl:url, filePath:path });
+    document.getElementById('minutes-title').value='';
+    document.getElementById('minutes-date').value='';
+    fileInput.value='';
+    status.innerHTML='<div class="alert alert-success">✓ Minutes uploaded.</div>';
+    await refreshMinutesAdminList();
+  }catch(e){ status.innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+  btn.disabled=false; btn.textContent='Upload Minutes';
+};
+window.deleteMinutes = async function(id){
+  if(!confirm('Delete these minutes? Trustees will no longer be able to see or download them. This cannot be undone.')) return;
+  try{
+    await deleteDoc(doc(db,'minutes',id));
+    await refreshMinutesAdminList();
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+// Trustee-facing view: Minutes tab — read-only, most recent first.
+async function renderMinutesHub(){
+  const el = document.getElementById('view-minutes');
+  el.innerHTML = `
+    <div class="page-title">Minutes</div>
+    <div class="page-sub">Minutes of past Art for Cure trustee meetings, most recent first.</div>
+    <div id="minutes-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
+  try{
+    const snap = await getDocs(query(collection(db,'minutes'), orderBy('meetingDate','desc')));
+    const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
+    const list = document.getElementById('minutes-list');
+    if(!items.length){ list.innerHTML='<div class="empty-state"><h3>No minutes have been posted yet.</h3></div>'; return; }
+    list.innerHTML = items.filter(m=>m.fileUrl).map(m=>`
+      <div class="sub-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div><div class="sub-artist">${esc(m.title||'Trustee Meeting')}</div><div class="sub-piece">${esc(formatMeetingDate(m.meetingDate))}</div></div>
+        <a class="btn btn-sm btn-primary" href="${esc(m.fileUrl)}" target="_blank">📄 View PDF</a>
+      </div>`).join('') || '<div class="empty-state"><h3>No minutes have been posted yet.</h3></div>';
+  }catch(e){ document.getElementById('minutes-list').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+
+// Grant Applications — the application form itself is separate future work; these are
+// placeholder tabs so the Trustee menu is complete and ready for it.
+function renderGrantsLiveHub(){
+  document.getElementById('view-grants-live').innerHTML = `
+    <div class="page-title">Live Grant Applications</div>
+    <div class="page-sub">Grant applications currently under consideration.</div>
+    <div class="empty-state"><h3>Coming soon</h3><p style="margin-top:6px;font-size:13px">The grant application form and workflow haven't been built yet — applications will appear here once that's in place, and move to Previous Grant Applications once a decision has been made.</p></div>`;
+}
+function renderGrantsPreviousHub(){
+  document.getElementById('view-grants-previous').innerHTML = `
+    <div class="page-title">Previous Grant Applications</div>
+    <div class="page-sub">Grant applications where a decision has already been made.</div>
+    <div class="empty-state"><h3>Coming soon</h3><p style="margin-top:6px;font-size:13px">Once the grant application form is built, decided applications will move here automatically.</p></div>`;
+}
 
 // ─────────────────────────────────────────
 // ONE-OFF: import pre-existing manual Shopify listings.
