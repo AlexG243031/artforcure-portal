@@ -3455,9 +3455,47 @@ function renderOneGrantCard(a){
           <button class="btn btn-sm btn-danger" onclick="showGrantDecisionModal('${a.id}','declined')">Decline</button>
           <button class="btn btn-sm btn-secondary" onclick="showGrantDecisionModal('${a.id}','deferred')">Defer</button>
         `:''}
+        ${a.status!=='live'?`<button class="btn btn-sm btn-secondary" onclick="editGrantMeetingDate('${a.id}')">✏️ ${a.meetingDate?'Edit':'Set'} Meeting Date</button>`:''}
       </div>
     </div>`;
 }
+
+window.editGrantMeetingDate = function(id){
+  const a = window._grantsCache[id]; if(!a) return;
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="grant-meetingdate-modal" onclick="if(event.target.id==='grant-meetingdate-modal')closeGrantMeetingDateModal()">
+      <div class="modal">
+        <h2>Meeting date — ${esc(a.orgName||'—')}</h2>
+        <p>Set (or correct) the date of the trustee meeting at which this decision was made. This is what the Grants Made running total is based on.</p>
+        <div class="field">
+          <label>Date of trustee meeting</label>
+          <input type="date" id="grant-meetingdate-input" value="${a.meetingDate||nowIsoDate()}"/>
+        </div>
+        <div id="grant-meetingdate-error"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeGrantMeetingDateModal()">Cancel</button>
+          <button class="btn btn-primary" id="grant-meetingdate-confirm-btn" onclick="confirmGrantMeetingDate('${id}')">Save</button>
+        </div>
+      </div>
+    </div>`);
+};
+window.closeGrantMeetingDateModal=function(){const m=document.getElementById('grant-meetingdate-modal'); if(m) m.remove();};
+window.confirmGrantMeetingDate = async function(id){
+  const btn=document.getElementById('grant-meetingdate-confirm-btn');
+  const errDiv=document.getElementById('grant-meetingdate-error');
+  const meetingDate=(document.getElementById('grant-meetingdate-input')||{}).value||'';
+  if(!meetingDate){ if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Please choose a date.</div>'; return; }
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    await updateDoc(doc(db,'grant_applications',id), { meetingDate, meetingDateMs: new Date(meetingDate+'T00:00:00').getTime() });
+    closeGrantMeetingDateModal();
+    if(document.getElementById('trustee-panel-grants-live') && document.getElementById('trustee-panel-grants-live').style.display!=='none') renderGrantsLiveHub();
+    else renderGrantsPreviousHub();
+  }catch(e){
+    if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Error: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent='Save';}
+  }
+};
 
 window.viewGrantDetail = function(id){
   const a = window._grantsCache[id]; if(!a) return;
