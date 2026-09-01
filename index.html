@@ -375,6 +375,8 @@ async function sendAlert(artistName, pieceName, category, artistEmail) {
 
 // ── Helpers ──
 function nowStr() { return new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function nowIsoDate() { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function formatIsoDate(iso) { if(!iso) return '—'; const [y,m,d]=iso.split('-'); if(!y||!m||!d) return esc(iso); return new Date(+y,+m-1,+d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
 function fmt(n) { if(n===undefined||n===null||n==='')return'—'; const x=parseFloat(n); return isNaN(x)?'—':'£'+x.toFixed(2); }
 function wc(str) { return !str||str.trim()===''?0:str.trim().split(/\s+/).length; }
 const is3D = c => ['Sculpture','Ceramic'].includes(c);
@@ -3279,22 +3281,27 @@ function renderTrusteesHub(){
       <button class="btn btn-sm btn-primary" id="trustee-subtab-minutes" onclick="switchTrusteesPanel('minutes')">📋 Minutes</button>
       <button class="btn btn-sm btn-secondary" id="trustee-subtab-grants-live" onclick="switchTrusteesPanel('grants-live')">📝 Live Grant Applications</button>
       <button class="btn btn-sm btn-secondary" id="trustee-subtab-grants-previous" onclick="switchTrusteesPanel('grants-previous')">🗂 Previous Grant Applications</button>
+      <button class="btn btn-sm btn-secondary" id="trustee-subtab-grants-made" onclick="switchTrusteesPanel('grants-made')">💰 Grants Made</button>
     </div>
     <div id="trustee-panel-minutes"></div>
     <div id="trustee-panel-grants-live" style="display:none;"></div>
-    <div id="trustee-panel-grants-previous" style="display:none;"></div>`;
+    <div id="trustee-panel-grants-previous" style="display:none;"></div>
+    <div id="trustee-panel-grants-made" style="display:none;"></div>`;
   switchTrusteesPanel('minutes');
 }
 window.switchTrusteesPanel = function(panel){
   document.getElementById('trustee-panel-minutes').style.display = panel==='minutes'?'':'none';
   document.getElementById('trustee-panel-grants-live').style.display = panel==='grants-live'?'':'none';
   document.getElementById('trustee-panel-grants-previous').style.display = panel==='grants-previous'?'':'none';
+  document.getElementById('trustee-panel-grants-made').style.display = panel==='grants-made'?'':'none';
   document.getElementById('trustee-subtab-minutes').className = 'btn btn-sm '+(panel==='minutes'?'btn-primary':'btn-secondary');
   document.getElementById('trustee-subtab-grants-live').className = 'btn btn-sm '+(panel==='grants-live'?'btn-primary':'btn-secondary');
   document.getElementById('trustee-subtab-grants-previous').className = 'btn btn-sm '+(panel==='grants-previous'?'btn-primary':'btn-secondary');
+  document.getElementById('trustee-subtab-grants-made').className = 'btn btn-sm '+(panel==='grants-made'?'btn-primary':'btn-secondary');
   if(panel==='minutes') renderMinutesHub();
   if(panel==='grants-live') renderGrantsLiveHub();
   if(panel==='grants-previous') renderGrantsPreviousHub();
+  if(panel==='grants-made') renderGrantsMadeHub();
 };
 
 // Trustee-facing view: Minutes panel — read-only, most recent first.
@@ -3367,6 +3374,60 @@ async function renderGrantsPreviousHub(){
   }catch(e){ document.getElementById('grants-previous-list').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
 }
 
+const GRANTS_MADE_CUTOFF_MS = new Date(2026,7,1).getTime(); // 1 Aug 2026
+
+async function renderGrantsMadeHub(){
+  const el = document.getElementById('trustee-panel-grants-made');
+  el.innerHTML = `
+    <div class="page-title">Grants Made</div>
+    <div class="page-sub">Running total of grants approved by trustees, by the date of the trustee meeting at which each was decided — starting 1 August 2026.</div>
+    <div id="grants-made-body"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
+  try{
+    const snap = await getDocs(query(collection(db,'grant_applications'), where('status','==','approved')));
+    const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
+    cacheGrants(items);
+    const dated = items.filter(a=>a.meetingDateMs && a.meetingDateMs>=GRANTS_MADE_CUTOFF_MS);
+    const undated = items.filter(a=>!a.meetingDateMs || a.meetingDateMs<GRANTS_MADE_CUTOFF_MS);
+    dated.sort((a,b)=>(a.meetingDateMs||0)-(b.meetingDateMs||0));
+    const body = document.getElementById('grants-made-body');
+    if(!dated.length){
+      body.innerHTML = '<div class="empty-state"><h3>No grants made since 1 Aug 2026 yet.</h3><p style="margin-top:6px;font-size:13px">Approved applications will appear here once a trustee meeting date has been recorded.</p></div>';
+      return;
+    }
+    let running = 0;
+    const rows = dated.map(a=>{
+      running += parseFloat(a.decisionAmount)||0;
+      return `<tr style="border-bottom:1px solid var(--gray-border)">
+        <td style="padding:8px 10px">${formatIsoDate(a.meetingDate)}</td>
+        <td style="padding:8px 10px;font-weight:700;color:var(--dark)">${esc(a.orgName||'—')}</td>
+        <td style="padding:8px 10px;text-align:right">${fmt(a.decisionAmount)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(running)}</td>
+      </tr>`;
+    }).join('');
+    let html = `
+      <div class="card" style="margin-bottom:16px">
+        <div class="detail-label">Total granted since 1 Aug 2026</div>
+        <div class="cost-value" style="font-size:28px">${fmt(running)}</div>
+        <div style="font-size:13px;color:var(--gray-text);margin-top:4px">${dated.length} grant${dated.length!==1?'s':''}</div>
+      </div>
+      <div class="card" style="padding:0;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--pink-light);text-align:left">
+            <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Meeting Date</th>
+            <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700">Organisation</th>
+            <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700;text-align:right">Amount</th>
+            <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--gray-text);font-weight:700;text-align:right">Running Total</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    if(undated.length){
+      html += `<div class="alert alert-warn" style="margin-top:16px">${undated.length} approved grant${undated.length!==1?'s are':' is'} missing a meeting date (or dated before 1 Aug 2026) and ${undated.length!==1?'are':'is'} not included above: ${undated.map(a=>esc(a.orgName||'—')).join(', ')}.</div>`;
+    }
+    body.innerHTML = html;
+  }catch(e){ document.getElementById('grants-made-body').innerHTML='<div class="alert alert-danger">Error: '+e.message+'</div>'; }
+}
+
 function renderOneGrantCard(a){
   const isOpen = a.status==='live' || a.status==='deferred';
   return `
@@ -3383,7 +3444,7 @@ function renderOneGrantCard(a){
       </div>
       <div class="sub-meta">
         <div class="sub-meta-item">Submitted <strong>${esc(a.submittedAt||'—')}</strong></div>
-        ${a.status!=='live'?`<div class="sub-meta-item">${a.status==='deferred'?'Deferred':'Decided'} <strong>${esc(a.decidedAt||'—')}</strong> by <strong>${esc(a.decidedBy||'—')}</strong></div>`:''}
+        ${a.status!=='live'?`<div class="sub-meta-item">${a.status==='deferred'?'Deferred':'Decided'} <strong>${esc(a.decidedAt||'—')}</strong> by <strong>${esc(a.decidedBy||'—')}</strong>${a.meetingDate?` · meeting <strong>${formatIsoDate(a.meetingDate)}</strong>`:''}</div>`:''}
         ${a.status==='approved'?`<div class="sub-meta-item pink">Amount granted <strong>${fmt(a.decisionAmount)}</strong></div>`:''}
         ${a.decisionNote && a.status!=='live'?`<div class="sub-meta-item" style="flex-basis:100%">${a.status==='deferred'?'Why':'Note'}: ${esc(a.decisionNote)}</div>`:''}
       </div>
@@ -3426,7 +3487,7 @@ window.viewGrantDetail = function(id){
         <div class="detail-value">${a.website?`<a href="${esc(a.website)}" target="_blank">${esc(a.website)}</a>`:'—'}</div>
         ${a.status!=='live'?`
           <div class="detail-label" style="margin-top:14px">${a.status==='deferred'?'Deferred':'Decision'}</div>
-          <div class="detail-value">${grantStatusBadge(a.status)} by ${esc(a.decidedBy||'—')} on ${esc(a.decidedAt||'—')}${a.status==='approved'?` — ${fmt(a.decisionAmount)} granted`:''}${a.decisionNote?`<br>${esc(a.decisionNote)}`:''}</div>
+          <div class="detail-value">${grantStatusBadge(a.status)} by ${esc(a.decidedBy||'—')} on ${esc(a.decidedAt||'—')}${a.meetingDate?` (trustee meeting ${formatIsoDate(a.meetingDate)})`:''}${a.status==='approved'?` — ${fmt(a.decisionAmount)} granted`:''}${a.decisionNote?`<br>${esc(a.decisionNote)}`:''}</div>
         `:''}
         <div class="modal-actions">
           <button class="btn btn-secondary" onclick="closeGrantDetailModal()">Close</button>
@@ -3449,6 +3510,10 @@ window.showGrantDecisionModal = function(id, decision){
       <div class="modal">
         <h2>${title} application — ${esc(a.orgName||'—')}</h2>
         <p>${isDefer?'Hold this application over for a future meeting — it stays in Live Grant Applications until a final decision is made.':'Record the decision made at the trustee meeting.'}</p>
+        <div class="field">
+          <label>Date of trustee meeting</label>
+          <input type="date" id="grant-decision-meeting-date" value="${nowIsoDate()}"/>
+        </div>
         ${isApprove?`
           <div class="field">
             <label>Amount granted (£)</label>
@@ -3470,17 +3535,26 @@ window.closeGrantDecisionModal=function(){const m=document.getElementById('grant
 
 window.confirmGrantDecision = async function(id, decision){
   const btn=document.getElementById('grant-decision-confirm-btn');
+  const errDiv=document.getElementById('grant-decision-error');
+  const meetingDateEl=document.getElementById('grant-decision-meeting-date');
+  const meetingDate = meetingDateEl ? meetingDateEl.value : '';
+  if(!meetingDate){
+    if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Please enter the date of the trustee meeting.</div>';
+    return;
+  }
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const note=(document.getElementById('grant-decision-note')||{}).value||'';
   const amountEl=document.getElementById('grant-decision-amount');
   try{
-    const update = { status:decision, decisionNote:note, decidedAt:nowStr(), decidedAtMs:Date.now(), decidedBy:_currentUser?.email||'' };
+    const update = {
+      status:decision, decisionNote:note, decidedAt:nowStr(), decidedAtMs:Date.now(), decidedBy:_currentUser?.email||'',
+      meetingDate, meetingDateMs: new Date(meetingDate+'T00:00:00').getTime()
+    };
     if(decision==='approved') update.decisionAmount = amountEl ? (parseFloat(amountEl.value)||0) : 0;
     await updateDoc(doc(db,'grant_applications',id), update);
     closeGrantDecisionModal();
     renderGrantsLiveHub();
   }catch(e){
-    const errDiv=document.getElementById('grant-decision-error');
     if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Error: '+e.message+'</div>';
     if(btn){btn.disabled=false;btn.textContent='Confirm '+grantDecisionLabel(decision);}
   }
