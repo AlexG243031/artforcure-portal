@@ -3329,6 +3329,7 @@ function cacheGrants(items){ items.forEach(a=>{ window._grantsCache[a.id]=a; });
 function grantStatusBadge(status){
   if(status==='approved') return '<span class="badge badge-approved">Approved</span>';
   if(status==='declined') return '<span class="badge badge-rejected">Declined</span>';
+  if(status==='deferred') return '<span class="badge badge-withdrawn">Deferred</span>';
   return '<span class="badge badge-pending">Live</span>';
 }
 
@@ -3336,10 +3337,10 @@ async function renderGrantsLiveHub(){
   const el = document.getElementById('trustee-panel-grants-live');
   el.innerHTML = `
     <div class="page-title">Live Grant Applications</div>
-    <div class="page-sub">Grant applications currently under consideration. Review these ahead of the next trustee meeting, then record the decision made.</div>
+    <div class="page-sub">Grant applications currently under consideration, including any deferred at a previous meeting. Review these ahead of the next trustee meeting, then record the decision made.</div>
     <div id="grants-live-list"><div class="loading-state"><div class="spinner"></div> Loading…</div></div>`;
   try{
-    const snap = await getDocs(query(collection(db,'grant_applications'), where('status','==','live')));
+    const snap = await getDocs(query(collection(db,'grant_applications'), where('status','in',['live','deferred'])));
     const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()}));
     items.sort((a,b)=>(b.submittedAtMs||0)-(a.submittedAtMs||0));
     cacheGrants(items);
@@ -3367,6 +3368,7 @@ async function renderGrantsPreviousHub(){
 }
 
 function renderOneGrantCard(a){
+  const isOpen = a.status==='live' || a.status==='deferred';
   return `
     <div class="sub-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
@@ -3381,14 +3383,16 @@ function renderOneGrantCard(a){
       </div>
       <div class="sub-meta">
         <div class="sub-meta-item">Submitted <strong>${esc(a.submittedAt||'—')}</strong></div>
-        ${a.status!=='live'?`<div class="sub-meta-item">Decided <strong>${esc(a.decidedAt||'—')}</strong> by <strong>${esc(a.decidedBy||'—')}</strong></div>`:''}
+        ${a.status!=='live'?`<div class="sub-meta-item">${a.status==='deferred'?'Deferred':'Decided'} <strong>${esc(a.decidedAt||'—')}</strong> by <strong>${esc(a.decidedBy||'—')}</strong></div>`:''}
         ${a.status==='approved'?`<div class="sub-meta-item pink">Amount granted <strong>${fmt(a.decisionAmount)}</strong></div>`:''}
+        ${a.decisionNote && a.status!=='live'?`<div class="sub-meta-item" style="flex-basis:100%">${a.status==='deferred'?'Why':'Note'}: ${esc(a.decisionNote)}</div>`:''}
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm btn-secondary" onclick="viewGrantDetail('${a.id}')">View Full Application</button>
-        ${a.status==='live'?`
+        ${isOpen?`
           <button class="btn btn-sm btn-primary" onclick="showGrantDecisionModal('${a.id}','approved')">Approve</button>
           <button class="btn btn-sm btn-danger" onclick="showGrantDecisionModal('${a.id}','declined')">Decline</button>
+          <button class="btn btn-sm btn-secondary" onclick="showGrantDecisionModal('${a.id}','deferred')">Defer</button>
         `:''}
       </div>
     </div>`;
@@ -3421,7 +3425,7 @@ window.viewGrantDetail = function(id){
         <div class="detail-label" style="margin-top:14px">Website</div>
         <div class="detail-value">${a.website?`<a href="${esc(a.website)}" target="_blank">${esc(a.website)}</a>`:'—'}</div>
         ${a.status!=='live'?`
-          <div class="detail-label" style="margin-top:14px">Decision</div>
+          <div class="detail-label" style="margin-top:14px">${a.status==='deferred'?'Deferred':'Decision'}</div>
           <div class="detail-value">${grantStatusBadge(a.status)} by ${esc(a.decidedBy||'—')} on ${esc(a.decidedAt||'—')}${a.status==='approved'?` — ${fmt(a.decisionAmount)} granted`:''}${a.decisionNote?`<br>${esc(a.decisionNote)}`:''}</div>
         `:''}
         <div class="modal-actions">
@@ -3432,27 +3436,32 @@ window.viewGrantDetail = function(id){
 };
 window.closeGrantDetailModal=function(){const m=document.getElementById('grant-detail-modal'); if(m) m.remove();};
 
+function grantDecisionLabel(decision){
+  return decision==='approved' ? 'Approval' : decision==='deferred' ? 'Deferral' : 'Decline';
+}
 window.showGrantDecisionModal = function(id, decision){
   const a = window._grantsCache[id]; if(!a) return;
   const isApprove = decision==='approved';
+  const isDefer = decision==='deferred';
+  const title = isApprove?'Approve':isDefer?'Defer':'Decline';
   document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-bg" id="grant-decision-modal" onclick="if(event.target.id==='grant-decision-modal')closeGrantDecisionModal()">
       <div class="modal">
-        <h2>${isApprove?'Approve':'Decline'} application — ${esc(a.orgName||'—')}</h2>
-        <p>Record the decision made at the trustee meeting.</p>
+        <h2>${title} application — ${esc(a.orgName||'—')}</h2>
+        <p>${isDefer?'Hold this application over for a future meeting — it stays in Live Grant Applications until a final decision is made.':'Record the decision made at the trustee meeting.'}</p>
         ${isApprove?`
           <div class="field">
             <label>Amount granted (£)</label>
             <input type="number" id="grant-decision-amount" value="${a.amountRequested||''}" min="0" step="0.01"/>
           </div>`:''}
         <div class="field">
-          <label>Note (optional)</label>
-          <textarea id="grant-decision-note" rows="3" placeholder="Any note for the record…"></textarea>
+          <label>${isDefer?"Why it's being deferred / what's needed first":'Terms, conditions or notes (optional)'}</label>
+          <textarea id="grant-decision-note" rows="3" placeholder="${isApprove?'e.g. conditional on…, paid as a reserve rather than in full, follow-up report required…':isDefer?'e.g. awaiting ethics approval, site visit needed before reconsidering…':'Any note for the record…'}"></textarea>
         </div>
         <div id="grant-decision-error"></div>
         <div class="modal-actions">
           <button class="btn btn-secondary" onclick="closeGrantDecisionModal()">Cancel</button>
-          <button class="btn ${isApprove?'btn-primary':'btn-danger'}" id="grant-decision-confirm-btn" onclick="confirmGrantDecision('${id}','${decision}')">Confirm ${isApprove?'Approval':'Decline'}</button>
+          <button class="btn ${isApprove?'btn-primary':isDefer?'btn-secondary':'btn-danger'}" id="grant-decision-confirm-btn" onclick="confirmGrantDecision('${id}','${decision}')">Confirm ${grantDecisionLabel(decision)}</button>
         </div>
       </div>
     </div>`);
@@ -3473,7 +3482,7 @@ window.confirmGrantDecision = async function(id, decision){
   }catch(e){
     const errDiv=document.getElementById('grant-decision-error');
     if(errDiv) errDiv.innerHTML='<div class="alert alert-danger" style="margin-top:1rem">Error: '+e.message+'</div>';
-    if(btn){btn.disabled=false;btn.textContent='Confirm '+(decision==='approved'?'Approval':'Decline');}
+    if(btn){btn.disabled=false;btn.textContent='Confirm '+grantDecisionLabel(decision);}
   }
 };
 
