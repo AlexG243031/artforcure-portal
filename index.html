@@ -276,9 +276,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
       <button class="nav-tab" id="tab-behalf" style="display:none;" onclick="showTab('behalf')">🎨 Current Artists</button>
       <button class="nav-tab" id="tab-settings" style="display:none;" onclick="showTab('settings')">⚙ Settings</button>
-      <button class="nav-tab" id="tab-minutes" style="display:none;" onclick="showTab('minutes')">📋 Minutes</button>
-      <button class="nav-tab" id="tab-grants-live" style="display:none;" onclick="showTab('grants-live')">📝 Live Grant Applications</button>
-      <button class="nav-tab" id="tab-grants-previous" style="display:none;" onclick="showTab('grants-previous')">🗂 Previous Grant Applications</button>
+      <button class="nav-tab" id="tab-trustees" style="display:none;" onclick="showTab('trustees')">👥 Trustees</button>
     </div>
     <div class="user-chip">
       <div class="user-chip-dot"></div>
@@ -297,9 +295,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-orders" style="display:none;"></div>
     <div id="view-volunteers" style="display:none;"></div>
     <div id="view-behalf" style="display:none;"></div>
-    <div id="view-minutes" style="display:none;"></div>
-    <div id="view-grants-live" style="display:none;"></div>
-    <div id="view-grants-previous" style="display:none;"></div>
+    <div id="view-trustees" style="display:none;"></div>
     </div>
 </div>
 
@@ -403,7 +399,7 @@ window.closeMobileMenu = function(){
 
 window.showTab = function(tab) {
   closeMobileMenu();
-  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf','minutes','grants-live','grants-previous'].forEach(t=>{
+  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf','trustees'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -414,9 +410,7 @@ window.showTab = function(tab) {
   if(tab==='invoices') renderInvoicesPortal(_currentUser?.email);
   if(tab==='behalf') renderBehalfHub();
   if(tab==='artist' && !_isAdmin) lookupArtist(_currentUser?.email);
-  if(tab==='minutes') renderMinutesHub();
-  if(tab==='grants-live') renderGrantsLiveHub();
-  if(tab==='grants-previous') renderGrantsPreviousHub();
+  if(tab==='trustees') renderTrusteesHub();
 };
 
 window.adminEditSubmission = function(id){
@@ -2977,10 +2971,8 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('tab-artist').style.display = (_isAdmin||_isTrustee) ? 'none' : '';
     document.getElementById('tab-sales').style.display = (_isAdmin||_isTrustee) ? 'none' : '';
     document.getElementById('tab-invoices').style.display = isPureTrustee ? 'none' : '';
-    // Trustee-only tabs — a completely separate menu, hidden from everyone else
-    document.getElementById('tab-minutes').style.display = _isTrustee ? '' : 'none';
-    document.getElementById('tab-grants-live').style.display = _isTrustee ? '' : 'none';
-    document.getElementById('tab-grants-previous').style.display = _isTrustee ? '' : 'none';
+    // Trustee-only tab — Minutes / Live & Previous Grant Applications, hidden from everyone else
+    document.getElementById('tab-trustees').style.display = _isTrustee ? '' : 'none';
 
     // User chip
     const chipName = document.getElementById('user-chip-name');
@@ -3005,7 +2997,7 @@ onAuthStateChanged(auth, async (user) => {
     const params = new URLSearchParams(window.location.search);
     const deepLinkTab = params.get('tab');
     const deepLinkInvoice = params.get('invoice');
-    if(isPureTrustee) showTab('minutes');
+    if(isPureTrustee) showTab('trustees');
     else if(_isAdmin && deepLinkTab==='invoices'){
       renderInvoicesPortal(null, deepLinkInvoice);
       showTab('invoices');
@@ -3278,9 +3270,36 @@ window.deleteMinutes = async function(id){
   }catch(e){ alert('Error: '+e.message); }
 };
 
-// Trustee-facing view: Minutes tab — read-only, most recent first.
+// ─────────────────────────────────────────
+// TRUSTEES (single tab, three sub-panels: Minutes / Live / Previous Grant Applications)
+// ─────────────────────────────────────────
+function renderTrusteesHub(){
+  document.getElementById('view-trustees').innerHTML = `
+    <div class="filter-bar">
+      <button class="btn btn-sm btn-primary" id="trustee-subtab-minutes" onclick="switchTrusteesPanel('minutes')">📋 Minutes</button>
+      <button class="btn btn-sm btn-secondary" id="trustee-subtab-grants-live" onclick="switchTrusteesPanel('grants-live')">📝 Live Grant Applications</button>
+      <button class="btn btn-sm btn-secondary" id="trustee-subtab-grants-previous" onclick="switchTrusteesPanel('grants-previous')">🗂 Previous Grant Applications</button>
+    </div>
+    <div id="trustee-panel-minutes"></div>
+    <div id="trustee-panel-grants-live" style="display:none;"></div>
+    <div id="trustee-panel-grants-previous" style="display:none;"></div>`;
+  switchTrusteesPanel('minutes');
+}
+window.switchTrusteesPanel = function(panel){
+  document.getElementById('trustee-panel-minutes').style.display = panel==='minutes'?'':'none';
+  document.getElementById('trustee-panel-grants-live').style.display = panel==='grants-live'?'':'none';
+  document.getElementById('trustee-panel-grants-previous').style.display = panel==='grants-previous'?'':'none';
+  document.getElementById('trustee-subtab-minutes').className = 'btn btn-sm '+(panel==='minutes'?'btn-primary':'btn-secondary');
+  document.getElementById('trustee-subtab-grants-live').className = 'btn btn-sm '+(panel==='grants-live'?'btn-primary':'btn-secondary');
+  document.getElementById('trustee-subtab-grants-previous').className = 'btn btn-sm '+(panel==='grants-previous'?'btn-primary':'btn-secondary');
+  if(panel==='minutes') renderMinutesHub();
+  if(panel==='grants-live') renderGrantsLiveHub();
+  if(panel==='grants-previous') renderGrantsPreviousHub();
+};
+
+// Trustee-facing view: Minutes panel — read-only, most recent first.
 async function renderMinutesHub(){
-  const el = document.getElementById('view-minutes');
+  const el = document.getElementById('trustee-panel-minutes');
   el.innerHTML = `
     <div class="page-title">Minutes</div>
     <div class="page-sub">Minutes of past Art for Cure trustee meetings, most recent first.</div>
@@ -3314,7 +3333,7 @@ function grantStatusBadge(status){
 }
 
 async function renderGrantsLiveHub(){
-  const el = document.getElementById('view-grants-live');
+  const el = document.getElementById('trustee-panel-grants-live');
   el.innerHTML = `
     <div class="page-title">Live Grant Applications</div>
     <div class="page-sub">Grant applications currently under consideration. Review these ahead of the next trustee meeting, then record the decision made.</div>
@@ -3331,7 +3350,7 @@ async function renderGrantsLiveHub(){
 }
 
 async function renderGrantsPreviousHub(){
-  const el = document.getElementById('view-grants-previous');
+  const el = document.getElementById('trustee-panel-grants-previous');
   el.innerHTML = `
     <div class="page-title">Previous Grant Applications</div>
     <div class="page-sub">Grant applications where a decision has already been made.</div>
