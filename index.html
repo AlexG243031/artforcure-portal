@@ -3042,9 +3042,9 @@ window.renderUserManagement = async function() {
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="user-badge ${(u.role==='admin'||u.role==='superadmin')?'user-badge-admin':u.disabled?'user-badge-disabled':'user-badge-artist'}">${u.role==='superadmin'?'Super Admin':u.role==='admin'?'Admin':u.disabled?'Disabled':'Artist'}</span>
           ${u.trustee?`<span class="user-badge user-badge-trustee">Trustee</span>`:''}
+          ${!u.trustee?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',false)">Make Trustee</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',true)">Remove Trustee</button>`}
           ${u.role!=='superadmin'?`
             ${u.role!=='admin'?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','admin')">Make Admin</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="setUserRole('${u.docId}','artist')">Remove Admin</button>`}
-            ${!u.trustee?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',false)">Make Trustee</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',true)">Remove Trustee</button>`}
             <button class="btn btn-sm btn-secondary" onclick="toggleUserDisabled('${u.docId}',${!!u.disabled})">${u.disabled?'Enable':'Disable'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.docId}','${esc(u.email)}')">Remove</button>
           `:''}
