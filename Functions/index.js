@@ -489,3 +489,56 @@ exports.checkForNewSales = onSchedule(
     console.log('Sale check complete. New sales notified:', newSalesFound);
   }
 );
+
+// ---------------------------------------------------
+// SCHEDULED: Weekly nudge to all Current Artists -> update their gallery
+// Runs every Monday at 9am UK time. "Current Artists" = every distinct
+// artist email/name found across submissions (mirrors the logic in
+// loadCurrentArtistsList() on the portal's Current Artists tab).
+// Queues a job on the existing bulkEmails collection so it reuses the
+// onBulkEmailCreated sender/template above rather than duplicating it.
+// ---------------------------------------------------
+exports.weeklyArtistNudge = onSchedule(
+  {
+    schedule: '0 9 * * 1',
+    timeZone: 'Europe/London',
+    region: 'europe-west2',
+  },
+  async (event) => {
+    const db = admin.firestore();
+
+    const subsSnap = await db.collection('submissions').get();
+    const byEmail = {};
+    subsSnap.forEach(d => {
+      const data = d.data();
+      const email = (data.artist?.email || '').toLowerCase().trim();
+      const name = data.artist?.name || '';
+      if (!email || !name) return;
+      if (!byEmail[email]) byEmail[email] = { email, firstName: name.split(' ')[0] };
+    });
+    const recipients = Object.values(byEmail);
+
+    if (!recipients.length) {
+      console.log('weeklyArtistNudge: no current artists found — nothing to send.');
+      return;
+    }
+
+    await db.collection('bulkEmails').add({
+      subject: 'A quick update for your Art for Cure gallery',
+      message: `Hi {firstName},
+
+Just a quick nudge — if you've got new pieces ready, now's a great time to add them to your gallery.
+
+<a href="https://submit.artforcure.org.uk/?tab=submit" style="color:#D30180;font-weight:700">Update My Gallery &rarr;</a>
+
+Thank you for supporting Art for Cure with your wonderful work.`,
+      recipients,
+      createLogins: false,
+      source: 'weeklyArtistNudge',
+      createdAt: new Date(),
+      status: 'pending',
+    });
+
+    console.log(`weeklyArtistNudge: queued bulk email to ${recipients.length} artist(s).`);
+  }
+);

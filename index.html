@@ -3004,6 +3004,7 @@ onAuthStateChanged(auth, async (user) => {
       renderInvoicesPortal(null, deepLinkInvoice);
       showTab('invoices');
     } else if(!_isAdmin && deepLinkTab==='sales') showTab('sales');
+    else if(!_isAdmin && deepLinkTab==='artist') showTab('artist');
     else if(!_isAdmin) showTab('submit');
     else showTab('admin');
 
