@@ -4405,8 +4405,11 @@ const slotDefs = window._eventSlots.filter(s => s.name.trim());
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
   }
 }
-async function loadEvents() {
+window.loadEvents = async function loadEvents(showArchivedOverride) {
   const v = document.getElementById('vol-panel-events');
+  const showArchived = typeof showArchivedOverride === 'boolean'
+    ? showArchivedOverride
+    : (document.getElementById('show-archived-events') && document.getElementById('show-archived-events').checked);
   v.innerHTML = '<div class="page-title">Events</div>' +
     '<div class="card" style="margin-bottom:16px">' +
     '<div style="font-weight:700;margin-bottom:10px">Create Event</div>' +
@@ -4429,30 +4432,45 @@ async function loadEvents() {
     '<button class="btn" onclick="createPortalEvent()">Create Event</button>' +
     '<div id="event-status" style="margin-top:8px"></div>' +
     '</div>' +
+    '<label style="font-size:12px;color:var(--gray-text);display:inline-flex;align-items:center;gap:6px;margin-bottom:12px"><input type="checkbox" id="show-archived-events" ' + (showArchived?'checked':'') + ' onchange="loadEvents(this.checked)"> Show archived events</label>' +
     '<div id="events-list"></div>';
   renderEventSlots();
   try {
     const snap = await getDocs(query(collection(db, 'events'), orderBy('startDate', 'desc')));
     const evs = [];
-    snap.forEach(d => evs.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => { const data = d.data(); if (showArchived || data.status !== 'archived') evs.push({ id: d.id, ...data }); });
     const list = document.getElementById('events-list');
-    if (!evs.length) { list.innerHTML = '<div class="empty-state"><h3>No events created yet.</h3></div>'; return; }
+    if (!evs.length) { list.innerHTML = '<div class="empty-state"><h3>' + (showArchived ? 'No events created yet.' : 'No active events. Tick \'Show archived events\' above to see archived ones.') + '</h3></div>'; return; }
     list.innerHTML = evs.map(ev =>
       '<div class="card" style="margin-bottom:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
       '<div style="font-weight:700;font-size:15px">' + esc(ev.title || '') + '</div>' +
+      '<span class="badge ' + (ev.status === 'archived' ? 'badge-pending' : 'badge-approved') + '">' + (ev.status === 'archived' ? 'archived' : 'active') + '</span>' +
+      '</div>' +
       '<div style="color:var(--gray-text);font-size:13px;margin-bottom:6px">' + esc(ev.location || '') + ' &nbsp;|&nbsp; ' + esc(ev.startDate || '') + ' to ' + esc(ev.endDate || '') + '</div>' +
       '<div style="font-size:13px;margin-bottom:6px">' + esc(ev.instructions || '') + '</div>' +
 '<div style="font-size:12px;color:var(--gray-text)">Slot types: ' + (ev.slotDefs || []).map(esc).join(', ') + '</div>' +
       '<div style="font-size:12px;color:var(--gray-text)">Total bookable slots generated: ' + ((ev.bookableSlots || []).length) + '</div>' +
       '<button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="editEventDetails(\'' + ev.id + '\')">Edit Details</button> ' +
       '<button class="btn btn-sm btn-secondary" onclick="showAddDayForm(\'' + ev.id + '\')">+ Add Extra Day</button> ' +
-      '<button class="btn btn-sm btn-secondary" onclick="showExtendForm(\'' + ev.id + '\')">Extend Event</button>' +
+      '<button class="btn btn-sm btn-secondary" onclick="showExtendForm(\'' + ev.id + '\')">Extend Event</button> ' +
+      (ev.status === 'archived' ?
+        '<button class="btn btn-sm btn-secondary" onclick="archiveEvent(\'' + ev.id + '\', false)">Restore</button>' :
+        '<button class="btn btn-sm btn-secondary" onclick="archiveEvent(\'' + ev.id + '\', true)">Archive</button>') +
       '<div id="extend-form-' + ev.id + '"></div>' +
       '<div id="add-day-form-' + ev.id + '"></div>' +
       '</div>'
     ).join('');
   } catch(e) {
       document.getElementById('events-list').innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+  }
+}
+window.archiveEvent = async function(id, archive) {
+  try {
+    await updateDoc(doc(db, 'events', id), { status: archive ? 'archived' : 'active' });
+    loadEvents();
+  } catch(e) {
+    alert('Error: ' + e.message);
   }
 }
 window.editEventDetails = async function(id) {
