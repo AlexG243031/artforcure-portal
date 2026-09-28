@@ -597,7 +597,6 @@ function renderBehalfHub(){
       <button class="btn btn-sm btn-primary" id="behalf-subtab-list" onclick="switchBehalfPanel('list')">All Artists</button>
       <button class="btn btn-sm btn-secondary" id="behalf-subtab-onbehalf" onclick="switchBehalfPanel('onbehalf')">🎨 On Behalf of Artist</button>
       <button class="btn btn-sm btn-secondary" id="behalf-subtab-onboard" onclick="switchBehalfPanel('onboard')">📧 Onboard Artists</button>
-      <button class="btn btn-sm btn-secondary" id="behalf-subtab-email" onclick="switchBehalfPanel('email')">✉️ Send Email</button>
     </div>
     <div id="behalf-panel-list">
       <div class="card">
@@ -606,7 +605,6 @@ function renderBehalfHub(){
       </div>
     </div>
     <div id="behalf-panel-onboard" style="display:none"></div>
-    <div id="behalf-panel-email" style="display:none"></div>
     <div id="behalf-panel-onbehalf" style="display:none">
       <div class="filter-bar">
         <button class="btn btn-primary btn-sm" onclick="showBehalfSearch('submit')">Submit Work for Artist</button>
@@ -837,13 +835,10 @@ window.switchBehalfPanel = function(panel){
   document.getElementById('behalf-panel-list').style.display = panel==='list'?'':'none';
   document.getElementById('behalf-panel-onbehalf').style.display = panel==='onbehalf'?'':'none';
   document.getElementById('behalf-panel-onboard').style.display = panel==='onboard'?'':'none';
-  document.getElementById('behalf-panel-email').style.display = panel==='email'?'':'none';
   document.getElementById('behalf-subtab-list').className = 'btn btn-sm '+(panel==='list'?'btn-primary':'btn-secondary');
   document.getElementById('behalf-subtab-onbehalf').className = 'btn btn-sm '+(panel==='onbehalf'?'btn-primary':'btn-secondary');
   document.getElementById('behalf-subtab-onboard').className = 'btn btn-sm '+(panel==='onboard'?'btn-primary':'btn-secondary');
-  document.getElementById('behalf-subtab-email').className = 'btn btn-sm '+(panel==='email'?'btn-primary':'btn-secondary');
   if(panel==='onboard') loadOnboardPanel();
-  if(panel==='email') loadArtistEmailPanel();
 };
 async function loadCurrentArtistsList(){
   const el = document.getElementById('current-artists-list');
@@ -891,109 +886,6 @@ window.viewArtistFromList = function(email){
   showTab('artist');
   lookupArtist(email);
 };
-
-// ─────────────────────────────────────────
-// BULK EMAIL TO CURRENT ARTISTS
-// ─────────────────────────────────────────
-const ARTIST_EMAIL_DEFAULT_SUBJECT = "Updates to our Terms & Conditions, and a bigger push for the online gallery ahead of Christmas";
-const ARTIST_EMAIL_DEFAULT_MESSAGE = `Dear {firstName},
-
-I hope you're keeping well. I'm writing with a couple of updates about the online gallery.
-
-First, a change on our side: my husband and digital whizz Alex will be taking on day-to-day management of the online gallery going forward — you may already have been in touch with him on portal matters. I'll continue to be responsible for curation, so the selection and standard of work you know remains firmly in my hands; Alex's role is about keeping things running smoothly day to day.
-
-1. Updated Terms & Conditions
-
-We've refreshed our artist Terms & Conditions. The key points to be aware of are:
-
-- Uploading work — you can submit new pieces yourself at any time via the artist portal (submit.artforcure.org.uk), without needing to go through us each time
-- Withdrawing sold work — if a piece sells elsewhere, or an edition completes outside the gallery, please let us know straightaway by clicking "WITHDRAW" in the portal so we can avoid a piece being sold twice
-- Communicating with buyers — when a piece sells through the online gallery, both we and you are notified automatically and you receive the buyer's details straightaway. Please get in touch with the buyer within 24 hours to arrange delivery, collection or lead times. Please inform us when the artwork has safely reached them as this is what triggers your payment
-
-You can view the full Terms & Conditions any time once you're signed into the portal, under the new "Terms & Conditions" tab.
-
-2. A bigger push for the online gallery ahead of Christmas
-
-With Christmas approaching, we're investing more in marketing the online gallery over the coming months to bring more buyers — and more visibility for your work — to the site, at a time of year with real potential to be our busiest selling season yet. To make the most of this, we'd love your help with:
-
-- Promoting the gallery on your own social media and other channels, whenever it's natural to do so — every share helps bring new visitors
-- Keeping your listings current — regularly reviewing your live work, updating anything that's changed, and withdrawing sold pieces promptly (see above)
-- Submitting more work — the wider and fresher the collection, the more reason buyers have to keep coming back, so please keep the submissions coming, especially in the run-up to Christmas
-
-If you haven't yet signed into the online portal, now's a great time to do so — those who have tell us it's easy to use and a real improvement on our previous way of uploading work.
-
-Thank you, as ever, for being part of Art for Cure — your work is what makes the gallery worth visiting, and we're excited about the expansion of this unique way of buying art.
-
-With thanks,
-Belinda Gray MBE
-Founder, Art for Cure`;
-
-async function loadArtistEmailPanel(){
-  const el = document.getElementById('behalf-panel-email');
-  el.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading artists…</div>';
-  try{
-    const snap = await getDocs(collection(db,'submissions'));
-    const byEmail = {};
-    snap.forEach(d=>{
-      const data = d.data();
-      const email = (data.artist?.email||'').toLowerCase().trim();
-      const name = data.artist?.name||'';
-      if(!email || !name) return;
-      if(!byEmail[email]) byEmail[email] = { name, email };
-    });
-    const usersSnap = await getDocs(collection(db,'users'));
-    const loginByEmail = {};
-    usersSnap.forEach(d=>{ const u=d.data(); if(u.email) loginByEmail[u.email.toLowerCase().trim()] = u.lastLoginAt||null; });
-
-    const artists = Object.values(byEmail).sort((a,b)=>a.name.localeCompare(b.name));
-    el.innerHTML = `
-      <div class="card" style="margin-bottom:16px">
-        <div style="font-weight:700;margin-bottom:10px">Send Bulk Email to Artists</div>
-        <div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">Tick the artists you want to email below, edit the subject and message if needed, then click Send. Use {firstName} anywhere in the message to automatically insert each artist's first name.</div>
-        <input type="text" id="artist-bulk-subject" placeholder="Subject" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box" value="${esc(ARTIST_EMAIL_DEFAULT_SUBJECT)}">
-        <textarea id="artist-bulk-message" placeholder="Message" rows="14" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--gray-border);border-radius:4px;box-sizing:border-box;font-family:inherit;">${esc(ARTIST_EMAIL_DEFAULT_MESSAGE)}</textarea>
-        <button class="btn" onclick="sendArtistBulkEmail()">Send to Selected Artists</button>
-        <div id="artist-bulk-status" style="margin-top:8px"></div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span class="pink-dot"></span> Select Recipients (${artists.length})</div>
-        <label style="font-size:12px;color:var(--gray-text);display:inline-flex;align-items:center;gap:6px;margin-bottom:10px"><input type="checkbox" id="artist-select-all" onchange="toggleAllArtistEmails(this)" checked> Select / deselect all</label>
-        ${artists.map(a=>{
-          const firstName = (a.name||'').trim().split(/\s+/)[0] || 'Artist';
-          const hasLoggedIn = loginByEmail.hasOwnProperty(a.email);
-          return `<div class="user-row">
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;width:100%">
-              <input type="checkbox" class="artist-email-checkbox" value="${esc(a.email)}" data-firstname="${esc(firstName)}" checked>
-              <span>
-                <div class="user-name">${esc(a.name)}</div>
-                <div class="user-email">${esc(a.email)} ${hasLoggedIn?'':'<span class="badge" style="background:var(--gray-bg);color:var(--gray-text);border:1px solid var(--gray-border);margin-left:6px">No login yet</span>'}</div>
-              </span>
-            </label>
-          </div>`;
-        }).join('')}
-      </div>`;
-  }catch(e){ el.innerHTML = '<div class="alert alert-danger">Error: '+e.message+'</div>'; }
-}
-window.toggleAllArtistEmails = function(master){
-  document.querySelectorAll('.artist-email-checkbox').forEach(cb => cb.checked = master.checked);
-};
-window.sendArtistBulkEmail = async function(){
-  const subject = document.getElementById('artist-bulk-subject').value.trim();
-  const message = document.getElementById('artist-bulk-message').value.trim();
-  const recipients = Array.from(document.querySelectorAll('.artist-email-checkbox:checked')).map(cb => ({ email: cb.value, firstName: cb.dataset.firstname || 'Artist' }));
-  const status = document.getElementById('artist-bulk-status');
-  if(!recipients.length){ status.innerHTML = '<span style="color:var(--danger)">Select at least one artist.</span>'; return; }
-  if(!subject || !message){ status.innerHTML = '<span style="color:var(--danger)">Subject and message are required.</span>'; return; }
-  if(!confirm('Send this email to '+recipients.length+' artist(s)?')) return;
-  status.innerHTML = 'Sending…';
-  try{
-    await addDoc(collection(db,'bulkEmails'), { subject, message, recipients, createLogins:false, source:'artistBulkEmail', createdAt: serverTimestamp(), status:'pending' });
-    status.innerHTML = '<span style="color:var(--success)">Email queued for '+recipients.length+' artist(s).</span>';
-  }catch(e){
-    status.innerHTML = '<span style="color:var(--danger)">Error: '+e.message+'</span>';
-  }
-};
-
 window.submitWorkForArtist = async function(email){
   showTab('submit');
   const profile = await lookupArtistProfile(email);
@@ -2921,6 +2813,21 @@ async function getShopifyLocationId(worker, store, token){
   return _shopifyLocationId;
 }
 
+let _shopifyPublicationIds = null;
+async function getShopifyPublicationIds(worker, store, token){
+  if(_shopifyPublicationIds) return _shopifyPublicationIds;
+  const res = await fetch(worker + '/proxy?path=/admin/api/2025-01/graphql.json', {
+    method: 'POST',
+    headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: 'query { publications(first: 25) { edges { node { id name } } } }' }),
+  });
+  if(!res.ok) throw new Error('Could not load Shopify sales channels (status '+res.status+').');
+  const data = await res.json();
+  const edges = (data.data && data.data.publications && data.data.publications.edges) || [];
+  _shopifyPublicationIds = edges.map(e => e.node.id);
+  return _shopifyPublicationIds;
+}
+
 async function pushToShopify(sub) {
   const intg = window._currentIntegrations || {};
   if(!intg.shopifyStore || !intg.shopifyClientId || !intg.shopifyClientSecret)
@@ -2988,6 +2895,31 @@ async function pushToShopify(sub) {
   const data = await res.json();
   const productId = data.product.id.toString();
   const inventoryItemId = data.product.variants[0].inventory_item_id;
+
+  // Enable the product on every sales channel (Online Store, POS, etc.).
+  // Creating a product via the REST API leaves it unpublished on all
+  // channels by default, even when status is 'draft' — draft/active only
+  // controls visibility, not channel availability. This makes sure that
+  // as soon as the product is set to Active, it's immediately live
+  // everywhere rather than needing every channel ticked by hand.
+  try {
+    const pubIds = await getShopifyPublicationIds(worker, store, token);
+    if(pubIds.length){
+      const pubRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/graphql.json', {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'mutation publish($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { field message } } }',
+          variables: { id: 'gid://shopify/Product/'+productId, input: pubIds.map(id => ({ publicationId: id })) },
+        }),
+      });
+      const pubData = await pubRes.json().catch(()=>({}));
+      const userErrors = pubData && pubData.data && pubData.data.publishablePublish ? pubData.data.publishablePublish.userErrors : null;
+      if(!pubRes.ok || (userErrors && userErrors.length)) {
+        console.error('Sales channel publish failed for', sub.piece.name, '— may need write_publications/read_publications scope added in the Shopify app:', userErrors || pubData);
+      }
+    }
+  } catch(e) { console.error('Sales channel publish failed for', sub.piece.name, '(non-fatal):', e); }
 
   // Set cost per item via inventory item API (cannot be set at product creation).
   // Errors here are non-fatal to the product creation itself, but are now
