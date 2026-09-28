@@ -2896,6 +2896,13 @@ async function getShopifyPublicationIds(worker, store, token){
   });
   if(!res.ok) throw new Error('Could not load Shopify sales channels (status '+res.status+').');
   const data = await res.json();
+  // Shopify's GraphQL API returns HTTP 200 even when a request is rejected
+  // for missing scopes — the rejection shows up as a top-level "errors"
+  // array instead. Checking res.ok alone would silently treat that as "no
+  // sales channels found" rather than surfacing the real problem.
+  if(data.errors && data.errors.length){
+    throw new Error('Shopify rejected the sales channels request — likely missing the read_publications scope: '+JSON.stringify(data.errors));
+  }
   const edges = (data.data && data.data.publications && data.data.publications.edges) || [];
   _shopifyPublicationIds = edges.map(e => e.node.id);
   return _shopifyPublicationIds;
@@ -2987,9 +2994,14 @@ async function pushToShopify(sub) {
         }),
       });
       const pubData = await pubRes.json().catch(()=>({}));
+      // As with getShopifyPublicationIds: a missing-scope rejection comes
+      // back as HTTP 200 with a top-level "errors" array, not a bad status
+      // code — check that explicitly rather than just userErrors, or a
+      // permissions failure here goes completely unlogged.
+      const topLevelErrors = pubData && pubData.errors;
       const userErrors = pubData && pubData.data && pubData.data.publishablePublish ? pubData.data.publishablePublish.userErrors : null;
-      if(!pubRes.ok || (userErrors && userErrors.length)) {
-        console.error('Sales channel publish failed for', sub.piece.name, '— may need write_publications/read_publications scope added in the Shopify app:', userErrors || pubData);
+      if(!pubRes.ok || (topLevelErrors && topLevelErrors.length) || (userErrors && userErrors.length)) {
+        console.error('Sales channel publish failed for', sub.piece.name, '— may need write_publications/read_publications scope added in the Shopify app:', topLevelErrors || userErrors || pubData);
       }
     }
   } catch(e) { console.error('Sales channel publish failed for', sub.piece.name, '(non-fatal):', e); }
