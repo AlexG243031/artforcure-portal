@@ -271,6 +271,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
       <button class="nav-tab" id="tab-artist" onclick="showTab('artist')">My Submissions</button>
       <button class="nav-tab" id="tab-sales" onclick="showTab('sales')">My Sales</button>
       <button class="nav-tab" id="tab-invoices" onclick="showTab('invoices')">My Invoices</button>
+      <button class="nav-tab" id="tab-terms" onclick="showTab('terms')">Terms &amp; Conditions</button>
       <button class="nav-tab" id="tab-admin" style="display:none;" onclick="showTab('admin')">Admin Review</button>
       <button class="nav-tab" id="tab-orders" style="display:none;" onclick="showTab('orders')">📦 Orders</button>
       <button class="nav-tab" id="tab-volunteers" style="display:none;" onclick="showTab('volunteers')">🙋 Volunteers</button>
@@ -290,6 +291,7 @@ body { font-family: var(--font); background: var(--gray-bg); color: var(--dark);
     <div id="view-artist" style="display:none;"></div>
     <div id="view-sales" style="display:none;"></div>
     <div id="view-invoices" style="display:none;"></div>
+    <div id="view-terms" style="display:none;"></div>
     <div id="view-admin" style="display:none;"></div>
     <div id="view-settings" style="display:none;"></div>
     <div id="view-orders" style="display:none;"></div>
@@ -401,7 +403,7 @@ window.closeMobileMenu = function(){
 
 window.showTab = function(tab) {
   closeMobileMenu();
-  ['submit','artist','sales','invoices','admin','orders','settings','volunteers','behalf','trustees'].forEach(t=>{
+  ['submit','artist','sales','invoices','terms','admin','orders','settings','volunteers','behalf','trustees'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const el=document.getElementById('tab-'+t); if(el)el.classList.toggle('active',t===tab);
   });
@@ -413,7 +415,52 @@ window.showTab = function(tab) {
   if(tab==='behalf') renderBehalfHub();
   if(tab==='artist' && !_isAdmin) lookupArtist(_currentUser?.email);
   if(tab==='trustees') renderTrusteesHub();
+  if(tab==='terms') renderTerms();
 };
+
+// ─────────────────────────────────────────
+// TERMS & CONDITIONS VIEW
+// ─────────────────────────────────────────
+function renderTerms(){
+  const v=document.getElementById('view-terms');
+  const items=[
+    ['Your Gallery Page','Your work sits on a permanent page on the Art for Cure website, with your photo, biography and available pieces — this personal connection makes a real difference to how art sells online. Do send us any short films or videos too; they\'re great for social media.'],
+    ['Submitting Your Work','Once you\'re ready to take part, we\'ll set you up with a login to our artist portal at submit.artforcure.org.uk. From there, you can upload your biography and add new pieces yourself whenever you have fresh work available, without needing to go through us each time.'],
+    ['When a Piece Sells Through Us','Both we and you are notified automatically and you will receive the buyer\'s details straightaway. Please get in touch with the buyer within 24 hours to arrange delivery, collection or lead times, and keep us posted until the piece has safely reached them — this is what triggers your payment.'],
+    ['Selling Elsewhere','You\'re welcome to show the same work elsewhere, but it is vital that you tell us as soon as it sells, or an edition is complete, so we can avoid a piece being sold twice.'],
+    ['Payment &amp; Commission','We handle all sales and payments centrally. Buyers pay in full at the point of sale, though a 50% deposit can be arranged for pieces with a longer lead time. We pay you at the end of each month, less our commission: 50% on paintings, prints and ceramics, 30% on sculpture.'],
+    ['Delivery &amp; Collection','Delivery is arranged directly between you and the buyer, who pays any delivery fee to you.'],
+    ['Studio Collection','We\'d also encourage collection in person where possible — it\'s often a lovely moment for a buyer to meet the artist — but just let us know if you\'d rather not offer this.'],
+    ['Photography','Clear, well-lit photographs from multiple angles make a real difference to how a piece sells online, especially for sculpture. Good photography is one of the simplest ways to help your work stand out.'],
+    ['Packaging','Once you\'re confirmed, we\'ll send you Art for Cure thank-you postcards and self-adhesive labels to include with each piece.'],
+    ['Keeping Stock Available','Please try to keep a minimum of three pieces (paintings and ceramics) or three sculptures available at any time — do let Belinda know if that\'s not possible. When something sells, we\'d love a replacement as soon as you\'re able.'],
+    ['Marketing &amp; PR','We promote the gallery and our artists through our audience, media contacts and PR channels, and we\'re always looking for new ways to raise your profile alongside ours.'],
+  ];
+  v.innerHTML=`
+    <div style="text-align:center;margin-bottom:1.25rem;">
+      <img src="https://submit.artforcure.org.uk/AFC1.png" alt="Art for Cure" style="height:60px"/>
+    </div>
+    <div class="page-title" style="text-align:center;">Online Gallery — Terms for Artists</div>
+    <div class="page-sub" style="text-align:center;max-width:640px;margin:0 auto 2rem;">
+      In just over six months, the gallery has generated strong sales, and we're now growing our sculpture selection and building a dedicated marketing, PR and national coverage effort to support it. Below is a summary of how the gallery works, and what we each take on as part of it.
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span>How It Works</div>
+      ${items.map(([title,text])=>`
+        <div style="margin-bottom:1.15rem;">
+          <div style="font-weight:700;color:var(--dark);margin-bottom:3px;">${title}</div>
+          <div style="font-size:14px;color:var(--gray-text);line-height:1.6;">${text}</div>
+        </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="pink-dot"></span>Questions?</div>
+      <div style="font-size:14px;color:var(--gray-text);line-height:1.6;">
+        We'd be thrilled to help with anything at all — get in touch any time at
+        <a href="mailto:belinda@artforcure.org.uk" style="color:var(--pink);">belinda@artforcure.org.uk</a> or 07815 061132.
+      </div>
+    </div>
+  `;
+}
 
 window.adminEditSubmission = function(id){
   const sub=_adminSubs.find(s=>s.id===id); if(!sub)return;
