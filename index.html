@@ -3552,7 +3552,12 @@ async function renderGrantsMadeHub(){
     // Compute the running total chronologically (oldest first) — that's the only order
     // in which "running total" is meaningful — then reverse for display so the most
     // recent grant, with the up-to-date total, is at the top of a long list.
-    dated.sort((a,b)=>(a.meetingDateMs||0)-(b.meetingDateMs||0));
+    // Sort chronologically by meeting date; when several grants share the same
+    // meeting date (a common case — several applications decided at one trustee
+    // meeting), break the tie by decidedAtMs (when the decision was recorded),
+    // so linked applications entered together stay adjacent in the running
+    // total instead of landing in an arbitrary order from Firestore.
+    dated.sort((a,b)=>(a.meetingDateMs||0)-(b.meetingDateMs||0) || (a.decidedAtMs||0)-(b.decidedAtMs||0));
     let running = 0;
     const computed = dated.map(a=>{
       const counts = a.countsInTotal !== false;
