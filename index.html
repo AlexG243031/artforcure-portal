@@ -2352,6 +2352,29 @@ window.confirmShopify=async function(id){
     const newLog=[...(sub.auditLog||[]),{ts:now,by:'Admin',note:`Pushed to Shopify (${shopifyId})`}];
     await updateDoc(doc(db,'submissions',id),{shopifyId,auditLog:newLog});
     sub.shopifyId=shopifyId; sub.auditLog=newLog;
+    // If someone other than Alex pushed this piece, email Alex so he remembers
+    // to switch it from Draft to Active in Shopify. Uses the same
+    // bulkEmails -> onBulkEmailCreated (SendGrid) pipeline as all other
+    // portal emails. Non-fatal: a failure here never blocks the push.
+    try {
+      const ALEX_EMAIL = 'alex@artforcure.org.uk';
+      const pusherEmail = (_currentUser?.email||'').toLowerCase().trim();
+      if(pusherEmail !== ALEX_EMAIL){
+        await addDoc(collection(db,'bulkEmails'), {
+          subject: 'Action needed: "'+sub.piece.name+'" is in Shopify as Draft',
+          message:
+            'Hi {firstName},\n\n'+
+            (pusherEmail||'An admin')+' has approved and pushed a piece to Shopify:\n\n'+
+            '<strong>'+esc(sub.piece.name)+'</strong> by '+esc(sub.artist.name)+' ('+fmt(parseFloat(sub.piece.price)||0)+')\n\n'+
+            'It is currently saved as <strong>Draft</strong> (sales channels already enabled). Please open it in Shopify and switch its status to <strong>Active</strong> to make it live.',
+          recipients: [{ email: ALEX_EMAIL, firstName: 'Alex' }],
+          createLogins: false,
+          source: 'pushToShopifyNotice',
+          createdAt: serverTimestamp(),
+          status: 'pending',
+        });
+      }
+    } catch(e) { console.warn('Draft-to-active reminder email failed (non-fatal):', e); }
     // Auto push to Google Sheet
     try {
       await pushToSheets(sub);
