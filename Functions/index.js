@@ -1,4 +1,4 @@
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
@@ -540,5 +540,44 @@ Thank you for supporting Art for Cure with your wonderful work.`,
     });
 
     console.log(`weeklyArtistNudge: queued bulk email to ${recipients.length} artist(s).`);
+  }
+);
+
+// -----------------------------------------------------------
+// TRIGGER: Artist changes their own bio -> alert Alex
+// (admin edits made "on behalf of" an artist are ignored)
+// -----------------------------------------------------------
+exports.bioUpdateAlert = onDocumentWritten(
+  {
+    document: 'artists/{artistId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY],
+  },
+  async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;                                   // profile deleted
+    const oldBio = (before.bio || '').trim();
+    const newBio = (after.bio || '').trim();
+    if (!newBio || oldBio === newBio) return;             // bio didn't change
+    if (after.lastEditedBy !== 'artist') return;          // made by an admin
+
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const name = after.name || 'An artist';
+    const msg = {
+      to: 'alex@artforcure.org.uk',
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: `Bio updated — ${name}`,
+      html: `
+        <p><strong>${name}</strong>${after.email ? ' (' + after.email + ')' : ''} has updated their bio in the artist portal.</p>
+        <p><a href="https://submit.artforcure.org.uk">Log in to the portal</a> to review it.</p>
+      `
+    };
+    try {
+      await sgMail.send(msg);
+      console.log(`Bio update alert sent for ${name}`);
+    } catch (err) {
+      console.error('SendGrid error (bio update alert):', err.response ? err.response.body : err);
+    }
   }
 );

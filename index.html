@@ -1044,8 +1044,9 @@ async function lookupArtistProfile(email){
 async function saveArtistProfile(artist){
   try{
     const snap=await getDocs(query(collection(db,'artists'),where('email','==',artist.email.toLowerCase().trim())));
-    if(!snap.empty){snap.forEach(async d=>{await updateDoc(doc(db,'artists',d.id),{...artist,updatedAt:nowStr()});});}
-    else{await addDoc(collection(db,'artists'),{...artist,createdAt:nowStr(),updatedAt:nowStr()});}
+    const editedBy={lastEditedBy:_isAdmin?'admin':'artist',lastEditedByEmail:(_currentUser&&_currentUser.email)||''};
+    if(!snap.empty){snap.forEach(async d=>{await updateDoc(doc(db,'artists',d.id),{...artist,...editedBy,updatedAt:nowStr()});});}
+    else{await addDoc(collection(db,'artists'),{...artist,...editedBy,createdAt:nowStr(),updatedAt:nowStr()});}
   }catch(e){console.warn('Profile save error:',e);}
 }
 
