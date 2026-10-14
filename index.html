@@ -2165,6 +2165,34 @@ window.saveEdit=async function(id){
   const now=nowStr(), newLog=[...(sub.auditLog||[]),{ts:now,by:'Artist',note:'Submission updated'}];
   try{
     await updateDoc(doc(db,'submissions',id),{piece:newPiece,auditLog:newLog,images:finalImages});
+    // Alert Alex that an artist edited a piece — edits made in the portal do
+    // NOT update Shopify, so he needs to mirror any change there by hand.
+    // Same bulkEmails -> SendGrid pipeline as other portal emails; non-fatal.
+    try {
+      const labels={name:'Title',price:'Price',medium:'Medium',dimensions:'Dimensions',weight:'Weight',plinths:'Plinths',framed:'Framed',frameDesc:'Frame description',glazed:'Glazing',edition:'Edition type',editionNum:'Edition number',numDelivered:'Number delivered',numOrder:'Available to order',leadTime:'Lead time'};
+      const changes=[];
+      Object.keys(labels).forEach(k=>{
+        const a=String((sub.piece||{})[k]??'').trim(), b=String(newPiece[k]??'').trim();
+        if(a!==b) changes.push('<strong>'+labels[k]+':</strong> '+esc(a||'(blank)')+' &rarr; '+esc(b||'(blank)'));
+      });
+      const oldImgs=(sub.images||[]).length, newImgCount=finalImages.length;
+      if(oldImgs!==newImgCount) changes.push('<strong>Images:</strong> '+oldImgs+' &rarr; '+newImgCount);
+      await addDoc(collection(db,'bulkEmails'), {
+        subject: 'Artist edit: "'+newPiece.name+'" by '+sub.artist.name,
+        message:
+          'Hi {firstName},\n\n'+
+          esc(sub.artist.name)+' has edited <strong>'+esc(newPiece.name)+'</strong> in the portal.\n\n'+
+          (sub.shopifyId
+            ? 'This piece is <strong>already on Shopify ('+esc(String(sub.shopifyId))+')</strong> — the edit has NOT updated Shopify, so please make the same change there.\n\n'
+            : 'It has not been pushed to Shopify yet (status: '+esc(sub.status||'pending')+'), so the portal now holds the updated details.\n\n')+
+          'Changes:\n'+(changes.length?changes.join('\n'):'(no field changes detected — possibly images only)'),
+        recipients: [{ email: 'alex@artforcure.org.uk', firstName: 'Alex' }],
+        createLogins: false,
+        source: 'artistEditNotice',
+        createdAt: serverTimestamp(),
+        status: 'pending',
+      });
+    } catch(e) { console.warn('Artist-edit alert email failed (non-fatal):', e); }
     const updated={...sub,piece:newPiece,auditLog:newLog,images:finalImages};
     window._artistSubs=(window._artistSubs||[]).map(s=>s.id===id?updated:s);
     window._editSub=updated; renderArtistDetails(window._artistSubs);
