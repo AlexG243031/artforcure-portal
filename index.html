@@ -1754,6 +1754,7 @@ function renderInvoiceList(invs, showFilters){
       <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="printInvoice('${inv.id}')">🖨️ Print</button>
         ${_isAdmin&&!isPaid?`<button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button>`:''}
+        ${_isAdmin&&!isPaid?`<button class="btn btn-secondary btn-sm" onclick="recalcInvoiceCommission('${inv.id}')">↻ Recalculate commission</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1810,6 +1811,43 @@ window.lookupInvoices = async function(presetEmail){
     if(!invs.length){ el.innerHTML='<div class="alert alert-warn">No invoices found yet.</div>'; return; }
     renderInvoiceList(invs, false);
   }catch(err){ el.innerHTML=`<div class="alert alert-danger">Error: ${err.message}</div>`; }
+};
+
+// Admin: re-read the piece's commission from its submission and correct an unpaid invoice.
+// Used to fix invoices raised before the Nov 2026 fix, when a missing rate fell back to a flat 40%.
+window.recalcInvoiceCommission = async function(invoiceId){
+  const inv = _invoiceCache[invoiceId];
+  if(!inv){ alert('Invoice not found — please refresh the page.'); return; }
+  if(inv.status==='paid'){ alert('This invoice is already paid, so it cannot be recalculated.'); return; }
+  let subData=null;
+  try{
+    if(inv.submissionId){ const ss=await getDoc(doc(db,'submissions',inv.submissionId)); if(ss.exists()) subData=ss.data(); }
+    if(!subData && inv.artistEmail && inv.pieceName){
+      const q2=await getDocs(query(collection(db,'submissions'), where('artist.email','==',String(inv.artistEmail).toLowerCase().trim())));
+      q2.forEach(d=>{ const x=d.data(); if(!subData && (x.piece?.name||'').trim().toLowerCase()===String(inv.pieceName).trim().toLowerCase()) subData=x; });
+    }
+  }catch(e){ alert('Could not read the piece record: '+e.message); return; }
+  if(!subData){ alert('Could not find the portal record for "'+(inv.pieceName||'')+'". Nothing has been changed.'); return; }
+  const newPct = commissionFor(subData);
+  const price = parseFloat(inv.price)||0;
+  const newOwed = Math.round(price*((100-newPct)/100)*100)/100;
+  const newAfc = Math.round((price-newOwed)*100)/100;
+  if(Number(inv.commissionPct)===newPct && Math.abs((parseFloat(inv.amountOwed)||0)-newOwed)<0.005){
+    alert('This invoice already uses the piece\'s commission rate ('+newPct+'%). Nothing to change.'); return;
+  }
+  const msg = 'Recalculate invoice '+(inv.invoiceNumber||'')+' for "'+(inv.pieceName||'')+'"?\n\n'
+    + 'Commission: '+(inv.commissionPct||'?')+'%  →  '+newPct+'%\n'
+    + 'AFC commission: '+fmt(inv.afcCommission)+'  →  '+fmt(newAfc)+'\n'
+    + 'Amount owed to artist: '+fmt(inv.amountOwed)+'  →  '+fmt(newOwed);
+  if(!confirm(msg)) return;
+  try{
+    await updateDoc(doc(db,'invoices',invoiceId), {
+      commissionPct:newPct, afcCommission:newAfc, amountOwed:newOwed,
+      recalculatedAt: nowStr(),
+      recalcNote: 'Commission corrected from '+(inv.commissionPct||'?')+'% to '+newPct+'% by admin'
+    });
+  }catch(e){ alert('Error saving: '+e.message); return; }
+  loadAllInvoices();
 };
 
 window.markInvoicePaid = async function(invoiceId){
