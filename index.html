@@ -379,6 +379,9 @@ async function sendAlert(artistName, pieceName, category, artistEmail) {
 function nowStr() { return new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function nowIsoDate() { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function formatIsoDate(iso) { if(!iso) return '—'; const [y,m,d]=iso.split('-'); if(!y||!m||!d) return esc(iso); return new Date(+y,+m-1,+d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+// Art for Cure commission rates: Sculpture 30%, everything else 50%.
+// Used whenever a submission has no commission stored (replaces the old flat 40% fallback).
+function commissionFor(sub){ const c=parseFloat(sub&&sub.commission); if(!isNaN(c)&&c>0) return c; return (sub&&sub.category==='Sculpture')?30:50; }
 function fmt(n) { if(n===undefined||n===null||n==='')return'—'; const x=parseFloat(n); return isNaN(x)?'—':'£'+x.toFixed(2); }
 function wc(str) { return !str||str.trim()===''?0:str.trim().split(/\s+/).length; }
 const is3D = c => ['Sculpture','Ceramic'].includes(c);
@@ -1594,10 +1597,20 @@ window.saveBankDetailsAndFulfill = async function(){
 async function finalizeFulfillment(sale){
   const now=nowStr();
   await updateDoc(doc(db,'sale_notifications',sale.id), { fulfilled:true, fulfilledAt: now });
-  let commPct=40;
+  // Commission comes from the piece's submission record. If that can't be read, fall back to the
+  // standard rates (Sculpture 30%, all else 50%) — never the old flat 40%.
+  let commPct=50, subData=null;
   if(sale.submissionId){
-    try{ const subSnap=await getDoc(doc(db,'submissions',sale.submissionId)); if(subSnap.exists()) commPct=parseFloat(subSnap.data().commission)||40; }catch(e){}
+    try{ const subSnap=await getDoc(doc(db,'submissions',sale.submissionId)); if(subSnap.exists()) subData=subSnap.data(); }
+    catch(e){ console.warn('Invoice: could not read submission '+sale.submissionId+' — using standard commission rate.', e); }
   }
+  if(!subData && sale.artistEmail && sale.pieceName){
+    try{
+      const q2=await getDocs(query(collection(db,'submissions'), where('artist.email','==',String(sale.artistEmail).toLowerCase().trim())));
+      q2.forEach(d=>{ const x=d.data(); if(!subData && (x.piece?.name||'').trim().toLowerCase()===String(sale.pieceName).trim().toLowerCase()) subData=x; });
+    }catch(e){ console.warn('Invoice: fallback submission lookup failed.', e); }
+  }
+  if(subData) commPct=commissionFor(subData);
   const price=parseFloat(sale.salePrice)||0;
   const amountOwed = price*((100-commPct)/100);
   const afcCommission = price-amountOwed;
@@ -2244,7 +2257,7 @@ function renderAdmin(){
     </div>`;
   if(!filtered.length) html+='<div class="empty-state"><h3>No submissions to show.</h3></div>';
   filtered.forEach(sub=>{
-    const price=parseFloat(sub.piece.price)||0, comm=parseFloat(sub.commission)||40;
+    const price=parseFloat(sub.piece.price)||0, comm=commissionFor(sub);
     const cos=price*((100-comm)/100), rev=price-cos;
     const exp=_expandedId===sub.id;
     const al=(sub.auditLog||[]).map(e=>`<div class="audit-entry"><span class="audit-ts">${e.ts}</span> — <strong>${e.by}</strong>: ${e.note}</div>`).join('');
@@ -2354,7 +2367,7 @@ window.setStatus=async function(id,status){
 };
 window.showShopifyModal=function(id){
   const sub=_adminSubs.find(s=>s.id===id); if(!sub)return;
-  const price=parseFloat(sub.piece.price)||0, cos=price*((100-(parseFloat(sub.commission)||40))/100);
+  const price=parseFloat(sub.piece.price)||0, cos=price*((100-commissionFor(sub))/100);
   document.body.insertAdjacentHTML('beforeend',`
     <div class="modal-bg" id="shopify-modal" onclick="if(event.target.id==='shopify-modal')closeModal()">
       <div class="modal">
@@ -2872,7 +2885,7 @@ async function pushToSheets(sub) {
   const url = intg.sheetsUrl || '';
   if(!url) { alert('Please add your Google Sheets Apps Script URL in Settings first.'); return; }
   const price = parseFloat(sub.piece.price)||0;
-  const comm = parseFloat(sub.commission)||40;
+  const comm = commissionFor(sub);
   const cos = price*((100-comm)/100);
   const row = {
     submitted_at: sub.submittedAt||'',
@@ -2969,7 +2982,7 @@ async function pushToShopify(sub) {
   const token  = await getShopifyToken();
 
   const price = parseFloat(sub.piece.price)||0;
-  const comm  = parseFloat(sub.commission)||40;
+  const comm  = commissionFor(sub);
   const cos   = price * ((100 - comm) / 100);   // artist payout ("cost of sale")
   const charityCut = price - cos;                // Art for Cure's share of this sale
   const imgs = (sub.images||[]).map((img,i)=>({ src: img.url, position: i+1, alt: sub.piece.name }));
@@ -3381,7 +3394,7 @@ async function loadArchive() {
     if(!subs.length) { v.innerHTML='<div class="page-title">Archive</div><div class="empty-state"><h3>No archived submissions yet.</h3></div>'; return; }
     let html = '<div class="page-title">Archive</div><div class="page-sub">Archived submissions — hidden from Admin Review.</div>';
     subs.forEach(sub=>{
-      const price=parseFloat(sub.piece?.price)||0, comm=parseFloat(sub.commission)||40;
+      const price=parseFloat(sub.piece?.price)||0, comm=commissionFor(sub);
       html += `<div class="sub-card">
         <div class="sub-header">
           <div>
@@ -4196,45 +4209,34 @@ async function loadOrders() {
     const allLineItems = orders.flatMap(o=>o.line_items||[]);
     const productIds = [...new Set(allLineItems.map(i=>i.product_id).filter(Boolean))];
 
-    // ── Fetch collection names ──
-    const collectionMap = {}; // product_id -> collection title
+    // ── Fetch artist collection names + cost of sale for every product in ONE batched GraphQL call
+    // per 50 products. (Previously this made two separate Shopify requests per product, one after
+    // another — up to 100 sequential round-trips, which hit Shopify's rate limit and made this tab slow.)
+    const collectionMap = {}; // product_id -> artist collection title
+    const costMap = {};       // product_id (string) -> cost
     try {
-      const colRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/custom_collections.json?limit=250&fields=id,title', {
-        headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-      });
-      if(colRes.ok) {
-        const collections = (await colRes.json()).custom_collections||[];
-        for(const pid of productIds.slice(0,50)) {
-          const cRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/collects.json?product_id='+pid+'&limit=5', {
-            headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
-          });
-          if(cRes.ok) {
-            const collects = (await cRes.json()).collects||[];
-            if(collects.length) {
-              const col = collections.find(c=>c.id===collects[0].collection_id);
-              if(col) collectionMap[pid] = col.title;
-            }
-          }
-        }
-      }
-    } catch(e) { console.warn('Collection lookup failed (non-fatal):', e); }
-
-    // ── Fetch cost from product metafields (artforcure.cost_of_sale) ──
-    // This works with read_products scope only
-    const costMap = {}; // product_id (string) -> cost
-    try {
-      for(const pid of productIds.slice(0,50)) {
-        const mRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/products/'+pid+'/metafields.json?namespace=artforcure&key=cost_of_sale', {
-          headers: {'X-Shopify-Access-Token':token,'X-Shopify-Store':store}
+      for(let k=0; k<productIds.length; k+=50){
+        const ids = productIds.slice(k,k+50).map(pid=>'gid://shopify/Product/'+pid);
+        const gq = 'query($ids:[ID!]!){ nodes(ids:$ids){ ... on Product { legacyResourceId metafield(namespace:"artforcure", key:"cost_of_sale"){ value } collections(first:5){ edges{ node{ title ruleSet{ appliedDisjunctively } } } } } } }';
+        const gRes = await fetch(worker+'/proxy?path=/admin/api/2025-01/graphql.json', {
+          method:'POST',
+          headers:{'X-Shopify-Access-Token':token,'X-Shopify-Store':store,'Content-Type':'application/json'},
+          body: JSON.stringify({ query: gq, variables: { ids } })
         });
-        if(mRes.ok) {
-          const mData = await mRes.json();
-          const mf = (mData.metafields||[]).find(m=>m.key==='cost_of_sale');
-          if(mf?.value) costMap[String(pid)] = parseFloat(mf.value);
+        if(!gRes.ok) { console.warn('Product batch lookup failed: status', gRes.status); continue; }
+        const gData = await gRes.json();
+        if(gData.errors && gData.errors.length) console.warn('Product batch lookup errors:', gData.errors);
+        for(const node of ((gData.data && gData.data.nodes) || [])){
+          if(!node || !node.legacyResourceId) continue;
+          const pid = String(node.legacyResourceId);
+          if(node.metafield && node.metafield.value) costMap[pid] = parseFloat(node.metafield.value);
+          // Artist collections are manual ("custom") collections; skip automated ones like "Paintings" or "Under £100"
+          const manual = ((node.collections && node.collections.edges) || []).map(e=>e.node).filter(c=>!c.ruleSet);
+          if(manual.length) collectionMap[pid] = manual[0].title;
         }
       }
-      console.log('Metafield costMap:', Object.keys(costMap).length, 'entries');
-    } catch(e) { console.warn('Metafield cost lookup failed:', e); }
+      console.log('Product lookup: costMap', Object.keys(costMap).length, 'entries; collections', Object.keys(collectionMap).length);
+    } catch(e) { console.warn('Product batch lookup failed (non-fatal):', e); }
 
     // Also load any manually-entered costs from Firestore
     const manualCostMap = {}; // product_id -> cost
