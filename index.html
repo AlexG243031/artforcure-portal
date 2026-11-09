@@ -1505,8 +1505,9 @@ function renderSalesResults(sales){
   document.getElementById('sales-details').innerHTML = sales.map(s => `<div class="card" style="border-left:4px solid ${s.fulfilled?'#2a7a50':'#D30180'}">
       <div class="sub-header">
         <div><div class="sub-artist">${esc(s.pieceName||'')}</div><div class="sub-piece">${esc(s.artistName||'')} &middot; Sold to ${esc(s.buyerName||'')}</div></div>
-        <span class="badge ${s.fulfilled?'badge-approved':'badge-pending'}">${s.fulfilled?'Fulfilled':'Awaiting Fulfillment'}</span>
+        <span class="badge ${s.fulfilled?'badge-approved':'badge-pending'}">${s.fulfilled?(s.saleType==='collect'?'Collected':'Fulfilled'):(s.saleType==='collect'?'Awaiting Collection':'Awaiting Fulfillment')}</span>
       </div>
+      ${exhibitionSaleBadge(s)}
       <div class="detail-grid">
         <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700;color:var(--pink)">${fmt(s.salePrice)}</div></div>
         ${s.buyerEmail?`<div><div class="detail-label">Buyer Email</div><div class="detail-value">${esc(s.buyerEmail)}</div></div>`:''}
@@ -1514,8 +1515,9 @@ function renderSalesResults(sales){
         ${s.buyerAddr?`<div><div class="detail-label">Buyer Address</div><div class="detail-value">${esc(s.buyerAddr)}</div></div>`:''}
       </div>
       <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        ${s.saleType==='collect' ? exhibitionSaleControls(s, '') : `
         <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContacted('${s.id}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
-        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button>`:''}
+        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button>`:''}`}
         ${s.certificateUrl?`<a class="btn btn-secondary btn-sm" href="${esc(s.certificateUrl)}" target="_blank" rel="noopener" title="Certificate ${esc(s.certificateNumber||'')} — emailed to ${esc(s.certificateEmailedTo||'')}">📜 Certificate</a>`:''}
       </div>
     </div>`).join('');
@@ -1596,8 +1598,18 @@ window.saveBankDetailsAndFulfill = async function(){
 };
 
 async function finalizeFulfillment(sale){
+  const { invoice, invRef } = await createInvoiceForSale(sale, 'unpaid');
+  const invoiceLink = window.location.origin + window.location.pathname + '?tab=invoices&invoice=' + invRef.id;
+  await sendInvoiceEmail(invoice, invoiceLink);
+  (window._salesRefreshReturn || lookupSales)(sale.artistEmail);
+}
+
+// Marks a sale delivered and raises its invoice. status 'unpaid' = live invoice (normal flow);
+// status 'draft' = exhibition collection, held for admin review before the artist sees it.
+async function createInvoiceForSale(sale, status){
   const now=nowStr();
-  await updateDoc(doc(db,'sale_notifications',sale.id), { fulfilled:true, fulfilledAt: now });
+  await updateDoc(doc(db,'sale_notifications',sale.id), { fulfilled:true, fulfilledAt: now,
+    ...(status==='draft' ? { collectedAt: now } : {}) });
   // Commission comes from the piece's submission record. If that can't be read, fall back to the
   // standard rates (Sculpture 30%, all else 50%) — never the old flat 40%.
   let commPct=50, subData=null;
@@ -1628,12 +1640,11 @@ async function finalizeFulfillment(sale){
     invoiceNumber, date: now, artistName: sale.artistName||'', artistEmail: sale.artistEmail||'',
     pieceName: sale.pieceName||'', buyerName: sale.buyerName||'', price, commissionPct: commPct,
     afcCommission, amountOwed, saleId: sale.id, submissionId: sale.submissionId||'',
-    bankDetails, status: 'unpaid', createdAt: serverTimestamp()
+    bankDetails, status, createdAt: serverTimestamp(),
+    ...(sale.exhibitionName ? { exhibitionName: sale.exhibitionName, exhibitionId: sale.exhibitionId||'' } : {})
   };
   const invRef = await addDoc(collection(db,'invoices'), invoice);
-  const invoiceLink = window.location.origin + window.location.pathname + '?tab=invoices&invoice=' + invRef.id;
-  await sendInvoiceEmail(invoice, invoiceLink);
-  (window._salesRefreshReturn || lookupSales)(sale.artistEmail);
+  return { invoice, invRef };
 }
 
 async function sendInvoiceEmail(invoice, invoiceLink){
@@ -1720,26 +1731,28 @@ window.setInvoiceFilter = function(f){ _invoiceFilter=f; renderInvoiceList(_allI
 function renderInvoiceList(invs, showFilters){
   const el=document.getElementById('invoices-details');
   invs.forEach(i=>{ _invoiceCache[i.id]=i; });
-  const counts={all:invs.length,unpaid:invs.filter(i=>i.status!=='paid').length,paid:invs.filter(i=>i.status==='paid').length};
-  const filtered = showFilters ? (_invoiceFilter==='all' ? invs : invs.filter(i=>(_invoiceFilter==='paid')===(i.status==='paid'))) : invs;
+  const stOf = i => i.status==='paid' ? 'paid' : i.status==='draft' ? 'draft' : 'unpaid';
+  const counts={all:invs.length,unpaid:invs.filter(i=>stOf(i)==='unpaid').length,paid:invs.filter(i=>stOf(i)==='paid').length,draft:invs.filter(i=>stOf(i)==='draft').length};
+  const filtered = showFilters ? (_invoiceFilter==='all' ? invs : invs.filter(i=>stOf(i)===_invoiceFilter)) : invs;
   let html='';
   if(showFilters){
     html += `<div class="filter-bar">
-      ${['unpaid','paid','all'].map(f=>`<button class="btn btn-sm ${_invoiceFilter===f?'btn-primary':'btn-secondary'}" onclick="setInvoiceFilter('${f}')">${f.charAt(0).toUpperCase()+f.slice(1)} (${counts[f]})</button>`).join('')}
+      ${(counts.draft?['draft','unpaid','paid','all']:['unpaid','paid','all']).map(f=>`<button class="btn btn-sm ${_invoiceFilter===f?'btn-primary':'btn-secondary'}" onclick="setInvoiceFilter('${f}')">${f.charAt(0).toUpperCase()+f.slice(1)} (${counts[f]})</button>`).join('')}
     </div>`;
   }
   if(!filtered.length){ html+='<div class="empty-state"><h3>No invoices to show.</h3></div>'; el.innerHTML=html; return; }
   html += filtered.map(inv=>{
     const isPaid = inv.status==='paid';
+    const isDraft = inv.status==='draft';
     const isHighlighted = _highlightInvoiceId===inv.id;
     return `<div class="card" id="invoice-${inv.id}" style="border-left:4px solid ${isPaid?'#2a7a50':'#D30180'};${isHighlighted?'box-shadow:0 0 0 3px var(--pink-mid);':''}">
       <div class="sub-header">
         <div>
           <div class="sub-artist">${esc(inv.pieceName||'')}</div>
           <div class="sub-piece">${_isAdmin?esc(inv.artistName||'')+' &middot; ':''}Sold to ${esc(inv.buyerName||'')} &middot; ${esc(inv.date||'')}</div>
-          ${inv.invoiceNumber?`<div style="font-size:11px;color:var(--gray-text);margin-top:2px">Invoice ${esc(inv.invoiceNumber)}</div>`:''}
+          ${inv.invoiceNumber?`<div style="font-size:11px;color:var(--gray-text);margin-top:2px">Invoice ${esc(inv.invoiceNumber)}${inv.exhibitionName?' &middot; 🖼 '+esc(inv.exhibitionName):''}</div>`:''}
         </div>
-        <span class="badge ${isPaid?'badge-approved':'badge-pending'}">${isPaid?'Paid':'Awaiting Payment'}</span>
+        <span class="badge ${isPaid?'badge-approved':'badge-pending'}" ${isDraft?'style="background:#eef1f6;color:#3b4a66;border:1px solid #c9d2e3"':''}>${isPaid?'Paid':isDraft?'Draft — awaiting review':'Awaiting Payment'}</span>
       </div>
       <div class="detail-grid">
         <div><div class="detail-label">Sale Price</div><div class="detail-value" style="font-weight:700">${fmt(inv.price)}</div></div>
@@ -1754,7 +1767,8 @@ function renderInvoiceList(invs, showFilters){
       </div>`:_isAdmin?`<div class="alert alert-warn" style="margin-top:0.5rem;font-size:12px">No bank details on file for this artist yet.</div>`:''}
       <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="printInvoice('${inv.id}')">🖨️ Print</button>
-        ${_isAdmin&&!isPaid?`<button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button>`:''}
+        ${_isAdmin&&isDraft?`<button class="btn btn-primary btn-sm" onclick="approveDraftInvoice('${inv.id}')">✓ Approve invoice</button>`:''}
+        ${_isAdmin&&!isPaid&&!isDraft?`<button class="btn btn-success btn-sm" onclick="markInvoicePaid('${inv.id}')">✓ Mark as Paid</button>`:''}
         ${_isAdmin&&!isPaid?`<button class="btn btn-secondary btn-sm" onclick="recalcInvoiceCommission('${inv.id}')">↻ Recalculate commission</button>`:''}
       </div>
     </div>`;
@@ -1808,10 +1822,175 @@ window.lookupInvoices = async function(presetEmail){
   const el=document.getElementById('invoices-details');
   try{
     const snap=await getDocs(query(collection(db,'invoices'), where('artistEmail','==',email), orderBy('createdAt','desc')));
-    const invs=[]; snap.forEach(d=>invs.push({id:d.id,...d.data()}));
+    const invs=[]; snap.forEach(d=>{ const x=d.data(); if(x.status!=='draft') invs.push({id:d.id,...x}); });
     if(!invs.length){ el.innerHTML='<div class="alert alert-warn">No invoices found yet.</div>'; return; }
     renderInvoiceList(invs, false);
   }catch(err){ el.innerHTML=`<div class="alert alert-danger">Error: ${err.message}</div>`; }
+};
+
+// ================= EXHIBITIONS =================
+// Exhibitions live in settings/exhibitions as { list:[{id,name,start,end,closedAt}] }.
+// The checkForNewSales Cloud Function tags any Shopify sale made on or between an
+// exhibition's dates with saleType 'collect' (buyer collects from the exhibition).
+async function loadExhibitionsList(){
+  const s = await getDoc(doc(db,'settings','exhibitions'));
+  return (s.exists() && s.data().list) || [];
+}
+async function saveExhibitionsList(list){ await setDoc(doc(db,'settings','exhibitions'), { list }, { merge:true }); }
+const ukDay = d => d ? new Date(d+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '';
+
+function exhibitionSaleBadge(s){
+  if(!s.exhibitionName) return '';
+  const label = s.saleType==='collect' ? 'Collected at exhibition' : 'Artist delivers';
+  return `<div style="margin:0.4rem 0"><span class="badge" style="background:#fdf0f7;color:#9b0a5f;border:1px solid #f1b8d8">🖼 ${esc(s.exhibitionName)} &middot; ${label}</span></div>`;
+}
+
+// Buttons/notes for a sale the buyer collects from an exhibition
+function exhibitionSaleControls(s, artistEmail){
+  if(s.fulfilled) return `<span style="font-size:12px;color:var(--success);font-weight:700">✓ Collected${s.collectedAt?' '+esc(s.collectedAt):''}</span>`;
+  if(!_isAdmin) return `<span style="font-size:13px;color:var(--gray-text)">The buyer is collecting this piece from the exhibition — no action needed. Art for Cure will confirm collection and raise your invoice.</span>`;
+  const e = esc(artistEmail||'');
+  return `<button class="btn btn-success btn-sm" onclick="markSaleCollected('${s.id}','${e}')">✓ Mark collected</button>
+    <button class="btn btn-secondary btn-sm" onclick="switchToArtistDelivers('${s.id}','${e}')">🚚 Change to "Artist delivers"</button>`;
+}
+
+function refreshAfterSaleAction(artistEmail){
+  if(artistEmail && typeof lookupArtist==='function') return lookupArtist(artistEmail);
+  const byName = document.getElementById('sales-lookup-name');
+  if(byName && byName.value.trim()) return lookupSalesByName();
+}
+
+window.markSaleCollected = async function(saleId, artistEmail){
+  if(!confirm('Mark this piece as collected by the buyer?\n\nA DRAFT invoice will be created for you to review under Invoices → Draft before the artist sees it.')) return;
+  try{
+    const snap = await getDoc(doc(db,'sale_notifications',saleId));
+    if(!snap.exists()){ alert('Sale record not found.'); return; }
+    await createInvoiceForSale({ id:saleId, ...snap.data() }, 'draft');
+    refreshAfterSaleAction(artistEmail);
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+window.switchToArtistDelivers = async function(saleId, artistEmail){
+  if(!confirm('Change this sale to "Artist delivers"?\n\nThe artist will be emailed the buyer\'s contact details and asked to arrange delivery, then mark the sale fulfilled in the portal — exactly like an online sale.')) return;
+  try{
+    await updateDoc(doc(db,'sale_notifications',saleId), { saleType:'delivery', saleTypeChangedAt: nowStr() });
+    refreshAfterSaleAction(artistEmail);
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+window.loadExhibitionsAdmin = async function(){
+  const v = document.getElementById('set-panel-exhibitions');
+  v.innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading…</div>';
+  try{
+    const list = (await loadExhibitionsList()).sort((a,b)=>(b.start||'').localeCompare(a.start||''));
+    v.innerHTML = `
+      <div class="card">
+        <div class="sub-artist" style="margin-bottom:0.4rem">Add an exhibition</div>
+        <div class="page-sub" style="margin-bottom:1rem">Any Shopify sale made on or between these dates is treated as an exhibition sale: the artist is told the buyer will collect from the exhibition, and no buyer contact is needed. Switch long-lead pieces to "Artist delivers" from the sale itself.</div>
+        <div class="detail-grid">
+          <div class="field"><label>Exhibition name</label><input id="exh-name" placeholder="e.g. Wyken 2027"/></div>
+          <div class="field"><label>First day</label><input id="exh-start" type="date"/></div>
+          <div class="field"><label>Last day</label><input id="exh-end" type="date"/></div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:0.75rem" onclick="addExhibition()">+ Add exhibition</button>
+      </div>
+      ${list.length ? list.map(ex=>`
+        <div class="card" style="border-left:4px solid ${ex.closedAt?'#2a7a50':'#D30180'}">
+          <div class="sub-header">
+            <div><div class="sub-artist">🖼 ${esc(ex.name)}</div><div class="sub-piece">${ukDay(ex.start)} – ${ukDay(ex.end)}</div></div>
+            <span class="badge ${ex.closedAt?'badge-approved':'badge-pending'}">${ex.closedAt?'Closed '+esc(ex.closedAt):'Open'}</span>
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openCloseExhibition('${ex.id}')">${ex.closedAt?'Review uncollected pieces':'Close exhibition'}</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteExhibition('${ex.id}')">Delete</button>
+          </div>
+        </div>`).join('') : '<div class="empty-state"><h3>No exhibitions yet.</h3></div>'}`;
+  }catch(e){ v.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`; }
+};
+
+window.addExhibition = async function(){
+  const name=(document.getElementById('exh-name').value||'').trim();
+  const start=document.getElementById('exh-start').value, end=document.getElementById('exh-end').value;
+  if(!name||!start||!end){ alert('Please enter a name, first day and last day.'); return; }
+  if(end<start){ alert('The last day is before the first day.'); return; }
+  try{
+    const list = await loadExhibitionsList();
+    const clash = list.find(e=>e.start<=end && start<=e.end);
+    if(clash && !confirm(`These dates overlap "${clash.name}". Sales in the overlap will be tagged to whichever is listed first. Continue?`)) return;
+    list.push({ id:'ex_'+Date.now(), name, start, end, createdAt: nowStr() });
+    await saveExhibitionsList(list);
+    loadExhibitionsAdmin();
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+window.deleteExhibition = async function(id){
+  if(!confirm('Delete this exhibition? Sales already tagged to it keep their tag; new sales on these dates will be treated as online sales.')) return;
+  try{ await saveExhibitionsList((await loadExhibitionsList()).filter(e=>e.id!==id)); loadExhibitionsAdmin(); }
+  catch(e){ alert('Error: '+e.message); }
+};
+
+window.openCloseExhibition = async function(id){
+  try{
+    const ex = (await loadExhibitionsList()).find(e=>e.id===id);
+    if(!ex){ alert('Exhibition not found.'); return; }
+    const snap = await getDocs(query(collection(db,'sale_notifications'), where('exhibitionId','==',id)));
+    const sales=[]; snap.forEach(d=>sales.push({id:d.id,...d.data()}));
+    const pending = sales.filter(s=>s.saleType==='collect' && !s.fulfilled);
+    const delivering = sales.filter(s=>s.saleType==='delivery' && !s.fulfilled).length;
+    document.body.insertAdjacentHTML('beforeend', `
+      <div class="modal-bg" id="exh-close-modal" onclick="if(event.target.id==='exh-close-modal')this.remove()">
+        <div class="modal" style="max-width:640px">
+          <h2>${ex.closedAt?'Uncollected pieces':'Close exhibition'} — ${esc(ex.name)}</h2>
+          <p>Untick any piece that has <strong>not</strong> been collected yet — it stays open and you can mark it collected later. Ticked pieces are marked collected and get a <strong>draft</strong> invoice for you to review under Invoices → Draft.</p>
+          ${delivering?`<div class="alert alert-warn" style="font-size:13px">${delivering} "Artist delivers" sale${delivering>1?'s are':' is'} not included — the artist marks those fulfilled once delivered.</div>`:''}
+          ${pending.length ? `<div style="max-height:45vh;overflow:auto;border:1px solid var(--gray-border);border-radius:6px;margin:0.75rem 0">
+            ${pending.map(s=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--gray-border);cursor:pointer">
+              <input type="checkbox" class="exh-collect-cb" value="${s.id}" checked style="margin-top:3px"/>
+              <span><strong>${esc(s.pieceName||'')}</strong> — ${esc(s.artistName||'')}<br/><span style="font-size:12px;color:var(--gray-text)">Sold to ${esc(s.buyerName||'')} &middot; ${fmt(s.salePrice)}</span></span>
+            </label>`).join('')}</div>` : '<div class="empty-state"><h3>No pieces awaiting collection.</h3></div>'}
+          <div id="exh-close-status"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="document.getElementById('exh-close-modal').remove()">Cancel</button>
+            ${pending.length?`<button class="btn btn-primary" id="exh-close-btn" onclick="confirmCloseExhibition('${id}')">Confirm collected &amp; create draft invoices</button>`:
+              (!ex.closedAt?`<button class="btn btn-primary" onclick="confirmCloseExhibition('${id}')">Mark exhibition closed</button>`:'')}
+          </div>
+        </div>
+      </div>`);
+  }catch(e){ alert('Error: '+e.message); }
+};
+
+window.confirmCloseExhibition = async function(id){
+  const ids = [...document.querySelectorAll('.exh-collect-cb:checked')].map(c=>c.value);
+  const btn = document.getElementById('exh-close-btn'); if(btn){ btn.disabled=true; btn.textContent='Working…'; }
+  const status = document.getElementById('exh-close-status');
+  let done=0; const failed=[];
+  for(const saleId of ids){
+    try{
+      const snap = await getDoc(doc(db,'sale_notifications',saleId));
+      if(snap.exists() && !snap.data().fulfilled){ await createInvoiceForSale({ id:saleId, ...snap.data() }, 'draft'); done++; }
+      if(status) status.innerHTML = `<div class="alert" style="font-size:13px">Processed ${done} of ${ids.length}…</div>`;
+    }catch(e){ failed.push(saleId+': '+e.message); }
+  }
+  try{
+    const list = await loadExhibitionsList();
+    const ex = list.find(e=>e.id===id); if(ex && !ex.closedAt){ ex.closedAt = nowStr(); await saveExhibitionsList(list); }
+  }catch(e){ failed.push('Could not mark exhibition closed: '+e.message); }
+  const m=document.getElementById('exh-close-modal'); if(m) m.remove();
+  alert(`${done} piece${done===1?'':'s'} marked collected and ${done} draft invoice${done===1?'':'s'} created.\n\nReview them under Invoices → Draft, then click "Approve invoice" on each.`
+        + (failed.length?`\n\nProblems:\n${failed.join('\n')}`:''));
+  loadExhibitionsAdmin();
+};
+
+window.approveDraftInvoice = async function(invoiceId){
+  const inv = _invoiceCache[invoiceId];
+  if(!inv){ alert('Invoice not found — please refresh.'); return; }
+  if(!confirm(`Approve invoice ${inv.invoiceNumber||''} for ${inv.artistName||''}?\n\nAmount owed to artist: ${fmt(inv.amountOwed)}\n\nIt will then appear as Awaiting Payment and be visible to the artist.`)) return;
+  try{
+    await updateDoc(doc(db,'invoices',invoiceId), { status:'unpaid', approvedAt: nowStr() });
+    const invoiceLink = window.location.origin + window.location.pathname + '?tab=invoices&invoice=' + invoiceId;
+    await sendInvoiceEmail({ ...inv, status:'unpaid' }, invoiceLink);
+  }catch(e){ alert('Error: '+e.message); return; }
+  loadAllInvoices();
 };
 
 // Admin: re-read the piece's commission from its submission and correct an unpaid invoice.
@@ -1926,9 +2105,11 @@ function renderOneSoldSubCard(sub, sales){
         <div><div class="detail-label">Buyer Email</div><div class="detail-value">${esc(s.buyerEmail||'—')}</div></div>
         <div><div class="detail-label">Sold</div><div class="detail-value">${esc(s.notifiedAt||'—')}</div></div>
       </div>
+      ${exhibitionSaleBadge(s)}
       <div style="margin-top:0.6rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${s.saleType==='collect' ? exhibitionSaleControls(s, artistEmail) : `
         <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContactedFromArtistView('${s.id}','${esc(artistEmail)}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
-        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilledFromArtistView('${s.id}','${esc(artistEmail)}')">Mark as Fulfilled</button>`:'<span style="font-size:12px;color:var(--success);font-weight:700">✓ Fulfilled</span>'}
+        ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilledFromArtistView('${s.id}','${esc(artistEmail)}')">Mark as Fulfilled</button>`:'<span style="font-size:12px;color:var(--success);font-weight:700">✓ Fulfilled</span>'}`}
         ${s.certificateUrl?`<a class="btn btn-secondary btn-sm" href="${esc(s.certificateUrl)}" target="_blank" rel="noopener" title="Certificate ${esc(s.certificateNumber||'')} — emailed to ${esc(s.certificateEmailedTo||'')}">📜 Certificate</a>`:''}
       </div>`).join('');
   return `<div class="card" style="border-left:4px solid #2a7a50">
@@ -2481,10 +2662,12 @@ function renderSettingsHub(){
       <button class="btn btn-sm btn-primary" id="set-subtab-settings" onclick="switchSettingsPanel('settings')">Settings</button>
       <button class="btn btn-sm btn-secondary" id="set-subtab-archive" onclick="switchSettingsPanel('archive')">📁 Archive</button>
       <button class="btn btn-sm btn-secondary" id="set-subtab-minutes" onclick="switchSettingsPanel('minutes')">📋 Minutes</button>
+      <button class="btn btn-sm btn-secondary" id="set-subtab-exhibitions" onclick="switchSettingsPanel('exhibitions')">🖼 Exhibitions</button>
     </div>
     <div id="set-panel-settings"></div>
     <div id="set-panel-archive" style="display:none;"></div>
-    <div id="set-panel-minutes" style="display:none;"></div>`;
+    <div id="set-panel-minutes" style="display:none;"></div>
+    <div id="set-panel-exhibitions" style="display:none;"></div>`;
   loadSettings();
 }
 window.switchSettingsPanel = function(panel){
@@ -2494,6 +2677,9 @@ window.switchSettingsPanel = function(panel){
   document.getElementById('set-subtab-settings').className = 'btn btn-sm '+(panel==='settings'?'btn-primary':'btn-secondary');
   document.getElementById('set-subtab-archive').className = 'btn btn-sm '+(panel==='archive'?'btn-primary':'btn-secondary');
   document.getElementById('set-subtab-minutes').className = 'btn btn-sm '+(panel==='minutes'?'btn-primary':'btn-secondary');
+  document.getElementById('set-panel-exhibitions').style.display = panel==='exhibitions'?'':'none';
+  document.getElementById('set-subtab-exhibitions').className = 'btn btn-sm '+(panel==='exhibitions'?'btn-primary':'btn-secondary');
+  if(panel==='exhibitions') loadExhibitionsAdmin();
   if(panel==='archive') loadArchive();
   if(panel==='minutes') loadMinutesAdmin();
 };

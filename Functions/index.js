@@ -1,4 +1,4 @@
-const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
@@ -185,6 +185,14 @@ exports.saleEmails = onDocumentCreated(
     const snap = event.data;
     const job = snap.data();
     const { artistEmail, artistName, pieceName, salePrice, buyerName, buyerEmail, buyerPhone, buyerAddr } = job;
+    // Exhibition sales: 'collect' = buyer collects from the exhibition (no artist action);
+    // 'delivery' + switched = an exhibition sale later switched to "Artist delivers".
+    const saleType = job.saleType || 'online';
+    const exhibitionName = job.exhibitionName || '';
+    const exhibitionEnd = job.exhibitionEnd || '';
+    const switched = !!job.switched;
+    const isCollect = saleType === 'collect';
+    const endText = exhibitionEnd ? new Date(exhibitionEnd + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
     if (!artistEmail) { console.warn('saleEmails doc missing artistEmail — skipping', event.params.jobId); return; }
 
     const buyerRows = [
@@ -197,7 +205,9 @@ exports.saleEmails = onDocumentCreated(
     const msg = {
       to: artistEmail,
       from: { email: FROM_EMAIL, name: FROM_NAME },
-      subject: `Great news — "${pieceName}" has sold!`,
+      subject: switched ? `Please arrange delivery — "${pieceName}"`
+             : isCollect ? `Great news — "${pieceName}" has sold at ${exhibitionName}!`
+             : `Great news — "${pieceName}" has sold!`,
       html: `
         <!DOCTYPE html>
         <html>
@@ -224,10 +234,18 @@ exports.saleEmails = onDocumentCreated(
             </div>
             <div class="body">
               <h2>Dear ${artistName || 'there'},</h2>
-              <p>Wonderful news — your piece <strong>${pieceName}</strong> has just sold!</p>
+              ${isCollect ? `
+              <p>Wonderful news — your piece <strong>${pieceName}</strong> has sold at <strong>${exhibitionName}</strong>!</p>
+              <div class="price-box">Sale price: ${salePrice}</div>
+              <p>The buyer will collect the piece from the exhibition, so there is no need for you to contact them or arrange delivery.</p>
+              <p>Once the piece has been collected, Art for Cure will confirm this and raise your invoice. Payment follows collection${endText ? ` — for most pieces this will be after the exhibition closes on ${endText}` : ''}.</p>
+              <p>You can see this sale in the artist portal at any time.</p>` : `
+              ${switched
+                ? `<p>Your piece <strong>${pieceName}</strong>, sold at <strong>${exhibitionName || 'the exhibition'}</strong>, is to be delivered directly to the buyer rather than collected from the exhibition.</p>`
+                : `<p>Wonderful news — your piece <strong>${pieceName}</strong> has just sold!</p>`}
               <div class="price-box">Sale price: ${salePrice}</div>
               ${buyerRows ? `<p><strong>Buyer contact details:</strong></p><div class="buyer-box">${buyerRows}</div><p>Please contact the buyer directly to arrange delivery (and let them know of any delivery fee), then confirm in the portal once you've been in touch.</p>` : ''}
-              <p>Please log in to the artist portal to view the full details of this sale, confirm you've contacted the buyer, and mark it as fulfilled once it's ready to go.</p>
+              <p>Please log in to the artist portal to view the full details of this sale, confirm you've contacted the buyer, and mark it as fulfilled once it has been delivered.</p>`}
               <p style="text-align:center;margin:28px 0"><a class="cta" href="https://submit.artforcure.org.uk/?tab=sales" target="_blank">View My Sales</a></p>
               <p>Thank you for supporting Art for Cure with your wonderful work.</p>
               <p>With warm wishes,<br/><strong>Art for Cure</strong></p>
@@ -250,7 +268,8 @@ exports.saleEmails = onDocumentCreated(
         <p>A sale has just gone through and the artist has been notified.</p>
         <p><strong>Artist:</strong> ${artistName || ''} (${artistEmail})<br/>
         <strong>Piece:</strong> ${pieceName}<br/>
-        <strong>Sale price:</strong> ${salePrice}</p>
+        <strong>Sale price:</strong> ${salePrice}
+        ${exhibitionName ? `<br/><strong>Exhibition:</strong> ${exhibitionName} (${isCollect ? 'buyer collects' : 'artist delivers'})` : ''}</p>
         ${buyerRows ? `<p><strong>Buyer:</strong></p>${buyerRows}` : ''}
       `
     };
@@ -267,9 +286,12 @@ exports.saleEmails = onDocumentCreated(
 
     // Always attempt the sales-team notification too — this must not depend on
     // the artist email, or on the Firestore status write below, succeeding.
+    // (Skipped for a "switched to Artist delivers" follow-up — sales@ already had the sale.)
     try {
-      await sgMail.send(salesTeamMsg);
-      console.log(`Sale-concluded email sent to sales@artforcure.org.uk for "${pieceName}"`);
+      if (!switched) {
+        await sgMail.send(salesTeamMsg);
+        console.log(`Sale-concluded email sent to sales@artforcure.org.uk for "${pieceName}"`);
+      }
     } catch (err) {
       console.error('SendGrid error (sales team email):', err.response ? err.response.body : err);
     }
@@ -441,6 +463,16 @@ exports.checkForNewSales = onSchedule(
     const ordersData = await ordersRes.json();
     const orders = ordersData.orders || [];
 
+    // Exhibitions (Settings → Exhibitions): sales on or between an exhibition's dates are
+    // exhibition sales — the buyer collects from the exhibition by default.
+    const exSnap = await db.collection('settings').doc('exhibitions').get();
+    const exhibitions = (exSnap.exists && exSnap.data().list) || [];
+    const exhibitionFor = (iso) => {
+      if (!iso) return null;
+      const day = new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); // YYYY-MM-DD
+      return exhibitions.find(e => e.start && e.end && e.start <= day && day <= e.end) || null;
+    };
+
     // Load already-notified sale IDs
     const notifiedSnap = await db.collection('sale_notifications').get();
     const notified = new Set(); notifiedSnap.forEach(d => notified.add(d.id));
@@ -464,6 +496,10 @@ exports.checkForNewSales = onSchedule(
       const buyerName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Unknown';
       const buyerEmail = customer.email || order.email || '';
       const certEligible = order.created_at && new Date(order.created_at) >= new Date(certStart);
+      const ex = exhibitionFor(order.created_at);
+      const exFields = ex
+        ? { saleType: 'collect', exhibitionId: ex.id, exhibitionName: ex.name || '', exhibitionEnd: ex.end || '' }
+        : { saleType: 'online' };
       const buyerPhone = customer.phone || addr.phone || '';
       const buyerAddr = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ');
 
@@ -490,6 +526,7 @@ exports.checkForNewSales = onSchedule(
             pieceName: matchedSub.piece?.name || item.title || 'your piece',
             salePrice: '£' + price.toFixed(2),
             buyerName, buyerEmail, buyerPhone, buyerAddr,
+            ...exFields,
             createdAt: new Date(),
             status: 'pending'
           });
@@ -501,6 +538,7 @@ exports.checkForNewSales = onSchedule(
             salePrice: price,
             buyerName, buyerEmail, buyerPhone, buyerAddr,
             submissionId: matchedSub.id || '',
+            ...exFields,
             fulfilled: false,
             buyerContacted: false
           });
@@ -748,5 +786,34 @@ exports.generateCertificate = onDocumentCreated(
         html: `<p>The Certificate of Authenticity for order <strong>${job.orderNo}</strong> could not be produced.</p><p>Error: ${String(e.message || e)}</p>`,
       }).catch(() => {});
     }
+  }
+);
+
+// ---------------------------------------------------
+// TRIGGER: an exhibition sale switched from "Collected at exhibition" to
+// "Artist delivers" in the portal -> email the artist the buyer's details and
+// the usual delivery instructions (reuses the saleEmails sender).
+// ---------------------------------------------------
+exports.onSaleTypeChanged = onDocumentUpdated(
+  {
+    document: 'sale_notifications/{saleId}',
+    region: 'europe-west2',
+  },
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    if (!(before.saleType === 'collect' && after.saleType === 'delivery')) return;
+    await admin.firestore().collection('saleEmails').add({
+      artistEmail: after.artistEmail || '',
+      artistName: after.artistName || 'there',
+      pieceName: after.pieceName || 'your piece',
+      salePrice: '£' + (Number(after.salePrice) || 0).toFixed(2),
+      buyerName: after.buyerName || '', buyerEmail: after.buyerEmail || '',
+      buyerPhone: after.buyerPhone || '', buyerAddr: after.buyerAddr || '',
+      saleType: 'delivery', switched: true,
+      exhibitionName: after.exhibitionName || '', exhibitionEnd: after.exhibitionEnd || '',
+      createdAt: new Date(), status: 'pending',
+    });
+    console.log(`Sale ${event.params.saleId} switched to Artist delivers — artist emailed.`);
   }
 );
