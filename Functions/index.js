@@ -269,7 +269,9 @@ exports.saleEmails = onDocumentCreated(
         <p><strong>Artist:</strong> ${artistName || ''} (${artistEmail})<br/>
         <strong>Piece:</strong> ${pieceName}<br/>
         <strong>Sale price:</strong> ${salePrice}
+        ${job.placedVia ? `<br/><strong>Placed via:</strong> ${job.placedVia}` : ''}
         ${exhibitionName ? `<br/><strong>Exhibition:</strong> ${exhibitionName} (${isCollect ? 'buyer collects' : 'artist delivers'})` : ''}</p>
+        ${isCollect && job.placedVia === 'Website checkout' ? `<p style="color:#b45309"><strong>Check:</strong> this exhibition sale came through the website checkout. If the buyer isn't collecting from the exhibition, open the sale in the portal and click <em>Change to "Artist delivers"</em>.</p>` : ''}
         ${buyerRows ? `<p><strong>Buyer:</strong></p>${buyerRows}` : ''}
       `
     };
@@ -456,7 +458,7 @@ exports.checkForNewSales = onSchedule(
     const token = tokenData.access_token;
 
     // Fetch recent orders (customer field gives us buyer name/email/phone/address)
-    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,email,created_at,line_items,customer', {
+    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,email,created_at,source_name,line_items,customer', {
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store }
     });
     if (!ordersRes.ok) { console.error('Shopify orders fetch failed:', await ordersRes.text()); return; }
@@ -497,6 +499,13 @@ exports.checkForNewSales = onSchedule(
       const buyerEmail = customer.email || order.email || '';
       const certEligible = order.created_at && new Date(order.created_at) >= new Date(certStart);
       const ex = exhibitionFor(order.created_at);
+      // How the order was placed — shown on the sales@ email so online orders during an
+      // exhibition stand out (Shopify doesn't record which collection the buyer browsed).
+      const src = order.source_name || '';
+      const placedVia = src === 'web' ? 'Website checkout'
+        : src === 'shopify_draft_order' ? 'Created by Art for Cure staff (Orders tab)'
+        : src === 'pos' ? 'Shopify POS'
+        : src ? src : 'Unknown';
       const exFields = ex
         ? { saleType: 'collect', exhibitionId: ex.id, exhibitionName: ex.name || '', exhibitionEnd: ex.end || '' }
         : { saleType: 'online' };
@@ -526,7 +535,7 @@ exports.checkForNewSales = onSchedule(
             pieceName: matchedSub.piece?.name || item.title || 'your piece',
             salePrice: '£' + price.toFixed(2),
             buyerName, buyerEmail, buyerPhone, buyerAddr,
-            ...exFields,
+            ...exFields, placedVia,
             createdAt: new Date(),
             status: 'pending'
           });
@@ -538,7 +547,7 @@ exports.checkForNewSales = onSchedule(
             salePrice: price,
             buyerName, buyerEmail, buyerPhone, buyerAddr,
             submissionId: matchedSub.id || '',
-            ...exFields,
+            ...exFields, placedVia,
             fulfilled: false,
             buyerContacted: false
           });
