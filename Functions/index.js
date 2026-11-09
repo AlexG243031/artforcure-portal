@@ -3,6 +3,8 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
+const crypto = require('crypto');
+const { buildCertificatePdf, certificateFields } = require('./certificate');
 admin.initializeApp();
 const SENDGRID_KEY = defineSecret('SENDGRID_KEY');
 const FROM_EMAIL = 'belinda@artforcure.org.uk';
@@ -399,12 +401,19 @@ exports.paymentConfirmedEmails = onDocumentCreated(
 // ---------------------------------------------------
 exports.checkForNewSales = onSchedule(
   {
-    schedule: '0 12,22 * * *',
+    schedule: 'every 15 minutes',
     timeZone: 'Europe/London',
     region: 'europe-west2',
   },
   async (event) => {
     const db = admin.firestore();
+
+    // Certificates only go out for orders placed after the certificate feature was switched
+    // on — otherwise the first run would send certificates for every historic order.
+    const certSettingsRef = db.collection('settings').doc('certificates');
+    const certSettings = await certSettingsRef.get();
+    let certStart = certSettings.exists && certSettings.data().startAt;
+    if (!certStart) { certStart = new Date().toISOString(); await certSettingsRef.set({ startAt: certStart }, { merge: true }); }
 
     // Load Shopify integration settings
     const intgDoc = await db.collection('settings').doc('integrations').get();
@@ -425,7 +434,7 @@ exports.checkForNewSales = onSchedule(
     const token = tokenData.access_token;
 
     // Fetch recent orders (customer field gives us buyer name/email/phone/address)
-    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,line_items,customer', {
+    const ordersRes = await fetch(worker + '/proxy?path=/admin/api/2025-01/orders.json?status=any&limit=100&fields=id,name,email,created_at,line_items,customer', {
       headers: { 'X-Shopify-Access-Token': token, 'X-Shopify-Store': store }
     });
     if (!ordersRes.ok) { console.error('Shopify orders fetch failed:', await ordersRes.text()); return; }
@@ -439,7 +448,13 @@ exports.checkForNewSales = onSchedule(
     // Build a lookup of Shopify product ID -> submission (artist details)
     const subsSnap = await db.collection('submissions').get();
     const subsByShopifyId = {};
-    subsSnap.forEach(d => { const data = d.data(); if (data.shopifyId) subsByShopifyId[String(data.shopifyId)] = data; });
+    // Keep the document id with the data so each sale records which submission it was
+    // (previously the id was dropped, leaving submissionId blank on every sale).
+    subsSnap.forEach(d => { const data = d.data(); if (data.shopifyId) subsByShopifyId[String(data.shopifyId)] = { id: d.id, ...data }; });
+
+    // Orders that already have a certificate job (or a "no portal record" alert)
+    const certSnap = await db.collection('certificates').select().get();
+    const certDone = new Set(); certSnap.forEach(d => certDone.add(d.id));
 
     let newSalesFound = 0;
 
@@ -447,7 +462,8 @@ exports.checkForNewSales = onSchedule(
       const customer = order.customer || {};
       const addr = customer.default_address || {};
       const buyerName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Unknown';
-      const buyerEmail = customer.email || '';
+      const buyerEmail = customer.email || order.email || '';
+      const certEligible = order.created_at && new Date(order.created_at) >= new Date(certStart);
       const buyerPhone = customer.phone || addr.phone || '';
       const buyerAddr = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ');
 
@@ -455,7 +471,16 @@ exports.checkForNewSales = onSchedule(
         const orderId = order.id + '_' + item.id;
         if (notified.has(orderId)) continue;
         const matchedSub = subsByShopifyId[String(item.product_id)];
-        if (!matchedSub || !matchedSub.artist || !matchedSub.artist.email) continue;
+        if (!matchedSub || !matchedSub.artist || !matchedSub.artist.email) {
+          // Not a portal piece — no data for a certificate, so tell sales@ once instead.
+          if (certEligible && !certDone.has(orderId)) {
+            await db.collection('certificates').doc(orderId).set({
+              status: 'no_portal_record', orderNo: order.name || '', pieceName: item.title || '',
+              buyerName, buyerEmail, createdAt: new Date().toISOString() });
+            certDone.add(orderId);
+          }
+          continue;
+        }
 
         const price = parseFloat(item.price) || 0;
         try {
@@ -481,6 +506,18 @@ exports.checkForNewSales = onSchedule(
           });
           notified.add(orderId);
           newSalesFound++;
+
+          if (certEligible && !certDone.has(orderId)) {
+            const qty = parseInt(item.quantity) || 1;
+            const discount = (item.discount_allocations || []).reduce((t, a) => t + (parseFloat(a.amount) || 0), 0);
+            const paid = Math.max(0, price * qty - discount);
+            await db.collection('certificates').doc(orderId).set({
+              status: 'pending', saleId: orderId, submissionId: matchedSub.id || '',
+              orderNo: order.name || '', orderDate: order.created_at || '',
+              buyerName, buyerEmail, listPrice: price * qty, pricePaid: paid,
+              createdAt: new Date().toISOString() });
+            certDone.add(orderId);
+          }
         } catch (e) {
           console.error('Failed to queue sale email for', orderId, e);
         }
@@ -578,6 +615,138 @@ exports.bioUpdateAlert = onDocumentWritten(
       console.log(`Bio update alert sent for ${name}`);
     } catch (err) {
       console.error('SendGrid error (bio update alert):', err.response ? err.response.body : err);
+    }
+  }
+);
+
+// ---------------------------------------------------
+// TRIGGER: certificate job created by checkForNewSales ->
+// build the Certificate of Authenticity & Receipt PDF, store it,
+// email it to the buyer (BCC sales@) and link it on the sale.
+// A 'no_portal_record' job just alerts sales@ instead.
+// ---------------------------------------------------
+const SALES_EMAIL = 'sales@artforcure.org.uk';
+const LOGO_URL = 'https://submit.artforcure.org.uk/AFC1.png';
+
+async function fetchBuffer(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return Buffer.from(await r.arrayBuffer());
+  } catch (e) { return null; }
+}
+
+const gbp = n => '£' + (Number(n) || 0).toFixed(2);
+const ukDate = iso => {
+  const dt = iso ? new Date(iso) : new Date();
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' });
+};
+
+exports.generateCertificate = onDocumentCreated(
+  {
+    document: 'certificates/{orderId}',
+    region: 'europe-west2',
+    secrets: [SENDGRID_KEY],
+    memory: '512MiB',
+  },
+  async (event) => {
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const db = admin.firestore();
+    const ref = event.data.ref;
+    const job = event.data.data();
+
+    if (job.status === 'no_portal_record') {
+      await sgMail.send({
+        to: SALES_EMAIL,
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: `No certificate sent — order ${job.orderNo} ("${job.pieceName}")`,
+        html: `<p>Order <strong>${job.orderNo}</strong> includes <strong>${job.pieceName}</strong>, which isn't linked to a piece in the submission portal, so no Certificate of Authenticity could be produced.</p>
+               <p>Buyer: ${job.buyerName || '—'} (${job.buyerEmail || 'no email'})</p>
+               <p>If this buyer should have a certificate, please arrange one manually.</p>`,
+      });
+      await ref.update({ status: 'alerted', alertedAt: new Date().toISOString() });
+      return;
+    }
+
+    try {
+      // Piece and artist details from the portal
+      const subSnap = job.submissionId ? await db.collection('submissions').doc(job.submissionId).get() : null;
+      if (!subSnap || !subSnap.exists) throw new Error('Submission not found: ' + job.submissionId);
+      const sub = subSnap.data();
+
+      // Sequential certificate number
+      const counterRef = db.collection('counters').doc('certificates');
+      const seq = await db.runTransaction(async t => {
+        const c = await t.get(counterRef);
+        const next = ((c.exists && c.data().next) || 1);
+        t.set(counterRef, { next: next + 1 }, { merge: true });
+        return next;
+      });
+      const certNo = 'AFC-COA-' + String(seq).padStart(5, '0');
+
+      // Art for Cure's share: what the buyer paid less what the artist is owed
+      const c = parseFloat(sub.commission);
+      const comm = (!isNaN(c) && c > 0) ? c : (sub.category === 'Sculpture' ? 30 : 50);
+      const artistShare = (Number(job.listPrice) || 0) * (100 - comm) / 100;
+      const supports = Math.max(0, (Number(job.pricePaid) || 0) - artistShare);
+
+      const fields = certificateFields(sub, job);
+      const firstImage = (sub.images || []).find(i => i && i.url);
+      const [logo, artwork] = await Promise.all([
+        fetchBuffer(LOGO_URL),
+        firstImage ? fetchBuffer(firstImage.url) : Promise.resolve(null),
+      ]);
+
+      const pdf = await buildCertificatePdf({
+        certNo, ...fields,
+        date: ukDate(job.orderDate), buyer: job.buyerName || '', orderNo: job.orderNo || '',
+        pricePaid: gbp(job.pricePaid), supports: supports > 0 ? gbp(supports) : '',
+      }, { logo, artwork });
+
+      // Store the PDF (unguessable download link, saved on the sale for the portal's button)
+      const token = crypto.randomUUID();
+      const filePath = `certificates/${certNo}.pdf`;
+      const bucket = admin.storage().bucket();
+      await bucket.file(filePath).save(pdf, { contentType: 'application/pdf',
+        metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+      const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+
+      // Email the buyer (or sales@ if no buyer email)
+      const to = job.buyerEmail || SALES_EMAIL;
+      const firstName = (job.buyerName || '').split(' ')[0];
+      await sgMail.send({
+        to,
+        ...(job.buyerEmail && job.buyerEmail.toLowerCase() !== SALES_EMAIL ? { bcc: SALES_EMAIL } : {}),
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: `Your Certificate of Authenticity — "${fields.title}"`,
+        html: `<div style="font-family:'Century Gothic',Arial,sans-serif;max-width:560px;margin:0 auto;color:#1F1F1F;line-height:1.6">
+          <div style="text-align:center;padding:24px 0"><img src="${LOGO_URL}" alt="Art for Cure" width="160"/></div>
+          ${job.buyerEmail ? '' : '<p style="color:#b00"><strong>No buyer email on this order — please print or forward this certificate.</strong></p>'}
+          <p>Dear ${firstName || 'collector'},</p>
+          <p>Thank you for buying <strong>${fields.title}</strong> by <strong>${fields.artist}</strong> from Art for Cure.</p>
+          <p>Attached is your Certificate of Authenticity, which also serves as your receipt. Please keep it with the artwork as a record of its provenance.</p>
+          ${supports > 0 ? `<p>${gbp(supports)} of your purchase supports the work of Art for Cure — thank you.</p>` : ''}
+          <p>With warm wishes,<br/><strong>Belinda Gray MBE</strong><br/>Founder, Art for Cure</p>
+          <p style="font-size:12px;color:#6B6B6B;border-top:1px solid #eee;padding-top:12px;margin-top:24px">Art for Cure · Registered charity no. 1175161 · Bredfield House, Bredfield, Woodbridge, Suffolk, IP13 6AA</p>
+        </div>`,
+        attachments: [{ content: pdf.toString('base64'), filename: `Art for Cure Certificate ${certNo}.pdf`,
+          type: 'application/pdf', disposition: 'attachment' }],
+      });
+
+      const sentAt = new Date().toISOString();
+      await ref.update({ status: 'sent', certificateNumber: certNo, certificateUrl: url, emailedTo: to, sentAt });
+      await db.collection('sale_notifications').doc(event.params.orderId).set({
+        certificateNumber: certNo, certificateUrl: url, certificateEmailedTo: to, certificateSentAt: sentAt,
+      }, { merge: true });
+      console.log(`Certificate ${certNo} sent to ${to} for order ${job.orderNo}`);
+    } catch (e) {
+      console.error('Certificate failed for', event.params.orderId, e);
+      await ref.update({ status: 'error', error: String(e.message || e) });
+      await sgMail.send({
+        to: SALES_EMAIL, from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: `Certificate could not be produced — order ${job.orderNo}`,
+        html: `<p>The Certificate of Authenticity for order <strong>${job.orderNo}</strong> could not be produced.</p><p>Error: ${String(e.message || e)}</p>`,
+      }).catch(() => {});
     }
   }
 );

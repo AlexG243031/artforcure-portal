@@ -1516,6 +1516,7 @@ function renderSalesResults(sales){
       <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContacted('${s.id}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
         ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilled('${s.id}')">Mark as Fulfilled</button>`:''}
+        ${s.certificateUrl?`<a class="btn btn-secondary btn-sm" href="${esc(s.certificateUrl)}" target="_blank" rel="noopener" title="Certificate ${esc(s.certificateNumber||'')} — emailed to ${esc(s.certificateEmailedTo||'')}">📜 Certificate</a>`:''}
       </div>
     </div>`).join('');
 }
@@ -1928,6 +1929,7 @@ function renderOneSoldSubCard(sub, sales){
       <div style="margin-top:0.6rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm ${s.buyerContacted?'btn-success':'btn-danger'}" ${s.buyerContacted?'disabled':`onclick="confirmBuyerContactedFromArtistView('${s.id}','${esc(artistEmail)}')"`}>${s.buyerContacted?'✓ Buyer Contacted':'Confirm Buyer Contacted'}</button>
         ${!s.fulfilled?`<button class="btn btn-primary btn-sm" onclick="markFulfilledFromArtistView('${s.id}','${esc(artistEmail)}')">Mark as Fulfilled</button>`:'<span style="font-size:12px;color:var(--success);font-weight:700">✓ Fulfilled</span>'}
+        ${s.certificateUrl?`<a class="btn btn-secondary btn-sm" href="${esc(s.certificateUrl)}" target="_blank" rel="noopener" title="Certificate ${esc(s.certificateNumber||'')} — emailed to ${esc(s.certificateEmailedTo||'')}">📜 Certificate</a>`:''}
       </div>`).join('');
   return `<div class="card" style="border-left:4px solid #2a7a50">
       <div class="sub-header">

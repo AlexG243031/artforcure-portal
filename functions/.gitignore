@@ -1,2 +1,4 @@
 node_modules/
 *.local
+# Licensed fonts and signature for certificates: deployed with functions, never published
+private/
