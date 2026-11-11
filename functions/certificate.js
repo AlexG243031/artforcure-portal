@@ -134,7 +134,7 @@ function buildCertificatePdf(d, assets) {
     doc.font('B').fontSize(9.5).fillColor(INK).text('Belinda Gray MBE', L, sigY + 2 * MM);
     doc.font('R').fontSize(8.5).fillColor(GREY).text('Founder, Art for Cure', L, sigY + 6.5 * MM);
     doc.font('B').fontSize(9.5).fillColor(INK).text('Date of issue', R - 64 * MM, sigY + 2 * MM);
-    doc.font('R').fontSize(8.5).fillColor(GREY).text(d.date, R - 64 * MM, sigY + 6.5 * MM);
+    doc.font('R').fontSize(8.5).fillColor(GREY).text(d.issueDate || d.date, R - 64 * MM, sigY + 6.5 * MM);
 
     // ---- Footer ----
     doc.font('R').fontSize(8).fillColor(GREY)
