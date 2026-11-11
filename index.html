@@ -2131,13 +2131,23 @@ function renderArtistDetails(subs, salesMap){
   // piece only ever has 1 unit, so a single sale removes it from Live Work as before.
   const sold = subs.filter(s=>!s.archived && pieceSoldCount(s,salesMap)>0);
   const active = subs.filter(s=>!s.archived && (pieceStockTotal(s) - pieceSoldCount(s,salesMap)) > 0);
-  const panel = window._artistDetailsPanel||'current';
+  // Bio tab: admins viewing a single artist
+  const emailsHere = [...new Set(subs.map(s=>(s.artist?.email||'').toLowerCase()).filter(Boolean))];
+  const bioEmail = (_isAdmin && emailsHere.length===1) ? emailsHere[0] : '';
+  let panel = window._artistDetailsPanel||'current';
+  if(panel==='bio' && !bioEmail) panel='current';
   const tabsHtml = `
     <div class="filter-bar">
       <button class="btn btn-sm ${panel==='current'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('current')">Live Work (${active.length})</button>
       <button class="btn btn-sm ${panel==='sold'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('sold')">💰 Sold Work (${sold.length})</button>
       <button class="btn btn-sm ${panel==='archived'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('archived')">📁 Archive (${archived.length})</button>
+      ${bioEmail?`<button class="btn btn-sm ${panel==='bio'?'btn-primary':'btn-secondary'}" onclick="switchArtistDetailsPanel('bio')">📝 Bio</button>`:''}
     </div>`;
+  if(panel==='bio' && bioEmail){
+    el.innerHTML = tabsHtml + '<div id="artist-bio-panel"><div class="loading-state"><div class="spinner"></div> Loading bio…</div></div>';
+    renderArtistBioPanel(bioEmail, subs[0].artist?.name||'');
+    return;
+  }
   const listToShow = panel==='archived' ? archived : panel==='sold' ? sold : active;
   const bodyHtml = listToShow.length
     ? (panel==='sold'
@@ -2151,6 +2161,51 @@ function renderArtistDetails(subs, salesMap){
     if(titleEl) titleEl.textContent = uniqueEmails.size===1 ? (subs[0].artist?.name||'Artist Submissions') : 'Search Results';
   }
 }
+// ── Bio tab (Current Artists → artist) ──
+async function renderArtistBioPanel(email, name){
+  const box = document.getElementById('artist-bio-panel'); if(!box) return;
+  const p = await lookupArtistProfile(email);
+  window._artistBioProfile = p || { email, name, bio:'' };
+  const bio = (p && p.bio) || '';
+  const words = bio.trim() ? bio.trim().split(/\s+/).length : 0;
+  box.innerHTML = `<div class="card">
+    <div class="sub-header">
+      <div><div class="sub-artist">${esc((p&&p.name)||name||'')}</div>
+        <div class="sub-piece">${p&&p.updatedAt?'Last updated '+esc(p.updatedAt)+(p.lastEditedBy?' by '+esc(p.lastEditedBy):''):'No bio on file yet'}${words?' &middot; '+words+' words':''}</div></div>
+      ${p&&p.photoUrl?`<img src="${esc(p.photoUrl)}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`:''}
+    </div>
+    <div id="artist-bio-view" style="white-space:pre-wrap;line-height:1.6;margin-top:0.75rem">${bio?esc(bio):'<span style="color:var(--gray-text)">No bio yet.</span>'}</div>
+    <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+      ${bio?`<button class="btn btn-secondary btn-sm" onclick="copyArtistBio()">📋 Copy bio</button>`:''}
+      <button class="btn btn-primary btn-sm" onclick="editArtistBio()">✎ Edit bio</button>
+    </div>
+    <div style="font-size:12px;color:var(--gray-text);margin-top:0.75rem">Changing the bio here does not update Shopify — use <strong>Copy bio</strong> and paste it into the artist's page in the Shopify theme editor.</div>
+  </div>`;
+}
+window.copyArtistBio = async function(){
+  const bio = (window._artistBioProfile||{}).bio||'';
+  try{ await navigator.clipboard.writeText(bio); alert('Bio copied — paste it into Shopify with Ctrl+V.'); }
+  catch(e){ prompt('Copy the bio below (Ctrl+C):', bio); }
+};
+window.editArtistBio = function(){
+  const v = document.getElementById('artist-bio-view'); if(!v) return;
+  const bio = (window._artistBioProfile||{}).bio||'';
+  v.style.whiteSpace='normal';
+  v.innerHTML = `<textarea id="artist-bio-edit" rows="12" style="width:100%;font:inherit;line-height:1.6">${esc(bio)}</textarea>
+    <div style="margin-top:0.5rem;display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" onclick="saveArtistBio()">Save bio</button>
+      <button class="btn btn-secondary btn-sm" onclick="switchArtistDetailsPanel('bio')">Cancel</button>
+    </div>`;
+};
+window.saveArtistBio = async function(){
+  const p = window._artistBioProfile||{}; if(!p.email){ alert('No artist email found.'); return; }
+  const bio = document.getElementById('artist-bio-edit').value.trim();
+  const words = bio ? bio.split(/\s+/).length : 0;
+  if(words>500 && !confirm(`This bio is ${words} words (the usual limit is 500). Save anyway?`)) return;
+  await saveArtistProfile({ email:p.email, name:p.name||'', bio });
+  switchArtistDetailsPanel('bio');
+};
+
 window.switchArtistDetailsPanel = function(panel){
   window._artistDetailsPanel = panel;
   renderArtistDetails(window._artistSubs||[]);
