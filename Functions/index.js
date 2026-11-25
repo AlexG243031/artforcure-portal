@@ -1,5 +1,6 @@
 const { onDocumentCreated, onDocumentWritten, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
@@ -824,5 +825,188 @@ exports.onSaleTypeChanged = onDocumentUpdated(
       createdAt: new Date(), status: 'pending',
     });
     console.log(`Sale ${event.params.saleId} switched to Artist delivers — artist emailed.`);
+  }
+);
+
+
+// ---------------------------------------------------
+// CALLABLE: public artist sign-up (join.html)
+// An artist accepts the Online Gallery terms on submit.artforcure.org.uk/join.html.
+// Creates their portal login (role: artist) with a unique temporary password,
+// records their acceptance in `artistSignups`, emails them the welcome email,
+// and sends Alex a heads-up. If the email already has a login, only the
+// acceptance is recorded (password untouched).
+// ---------------------------------------------------
+const SIGNUP_ALERT_EMAIL = 'alex@artforcure.org.uk';
+const htmlEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tempPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'; // no 0/O, 1/l/I
+  return Array.from(crypto.randomBytes(8), b => chars[b % chars.length]).join('');
+};
+const portalNowStr = () => new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+
+function artistWelcomeEmail(firstName, email, password) {
+  const f = htmlEsc(firstName), e = htmlEsc(email), p = htmlEsc(password);
+  const h = t => `<p style="margin:26px 0 8px;font-weight:bold;color:#D30582;letter-spacing:.5px">${t}</p>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#FAF7F2;">
+<div style="max-width:580px;margin:32px auto;background:#FFFFFF;border:1px solid #DDD8D0;font-family:'Century Gothic',CenturyGothic,AppleGothic,sans-serif;color:#1C1C1C;font-size:15px;line-height:1.7;">
+  <div style="padding:26px 36px;text-align:center;border-bottom:1px solid #DDD8D0;">
+    <img src="${LOGO_URL}" alt="Art for Cure" width="160" style="height:auto;max-width:160px;display:inline-block;"/>
+  </div>
+  <div style="padding:32px 36px;">
+    <p>Hi ${f}</p>
+    <p>I hope you are well.</p>
+    <p>We're excited to let you know that Art for Cure now has a new online portal where you can manage your own work with us — submitting new pieces, checking on your current pieces, and tracking your sales, all in one place.</p>
+    <p>This email explains how to log in and get started.</p>
+    ${h('HOW TO LOG IN')}
+    <ol style="margin:0 0 0 20px;padding:0;">
+      <li>Go to this address in your web browser: <a href="https://submit.artforcure.org.uk/" style="color:#D30582;">https://submit.artforcure.org.uk/</a></li>
+      <li>Enter your email address: <strong>${e}</strong></li>
+      <li>Enter this temporary password: <strong style="font-family:Consolas,monospace;font-size:16px;">${p}</strong></li>
+      <li>Click "Sign In"</li>
+    </ol>
+    ${h('SETTING YOUR OWN PASSWORD (takes one minute)')}
+    <p>Once you're able to log in, we'd recommend changing to a password only you know:</p>
+    <ol style="margin:0 0 0 20px;padding:0;">
+      <li>On the login screen, click "Forgot password?"</li>
+      <li>Enter your email address and click send</li>
+      <li>Check your email inbox for a message from us — click the link inside it</li>
+      <li>Choose a new password of your own</li>
+    </ol>
+    <p style="margin-top:14px;">That's it — from then on, just use your email address and your own new password to log in.</p>
+    ${h('WHAT YOU CAN DO ON THE PORTAL')}
+    <p>Once logged in, you'll see a few simple tabs along the top:</p>
+    <ul style="margin:0 0 0 20px;padding:0;">
+      <li>Create your details and your Bio</li>
+      <li>Submit Work — share a new piece with us for review, with photos and details</li>
+      <li>My Submissions — see your current piece(s) with us and their status</li>
+      <li>My Sales — see anything of yours that's sold, and confirm once you've delivered it to the buyer</li>
+      <li>My Invoices — a record of what's owed to you once a sale is confirmed as delivered</li>
+    </ul>
+    ${h('IMPORTANT — PLEASE CHECK YOUR LISTINGS REGULARLY')}
+    <p>We would be very grateful if you could regularly check that work we have listed for you on our live website is still available. If this is not the case, please use the "Withdraw" button next to the relevant piece.</p>
+    <p>If you get stuck at any point, or something isn't working as expected, just reply to this email or give us a call — we're always happy to help.</p>
+    <p>Thank you, as ever, for being part of Art for Cure.</p>
+    <p>Best regards,<br/>Art for Cure</p>
+  </div>
+  <div style="padding:20px 36px;border-top:1px solid #DDD8D0;font-size:12px;color:#9B9B9B;text-align:center;">
+    Art for Cure &nbsp;|&nbsp; artforcure.org.uk &nbsp;|&nbsp; Registered Charity 1175161
+  </div>
+</div></body></html>`;
+  const text = `Hi ${firstName}
+
+I hope you are well.
+
+We're excited to let you know that Art for Cure now has a new online portal where you can manage your own work with us — submitting new pieces, checking on your current pieces, and tracking your sales, all in one place.
+
+This email explains how to log in and get started.
+
+HOW TO LOG IN
+1. Go to this address in your web browser: https://submit.artforcure.org.uk/
+2. Enter your email address: ${email}
+3. Enter this temporary password: ${password}
+4. Click "Sign In"
+
+SETTING YOUR OWN PASSWORD (takes one minute)
+Once you're able to log in, we'd recommend changing to a password only you know:
+1. On the login screen, click "Forgot password?"
+2. Enter your email address and click send
+3. Check your email inbox for a message from us — click the link inside it
+4. Choose a new password of your own
+
+That's it — from then on, just use your email address and your own new password to log in.
+
+WHAT YOU CAN DO ON THE PORTAL
+Once logged in, you'll see a few simple tabs along the top:
+* Create your details and your Bio
+* Submit Work — share a new piece with us for review, with photos and details
+* My Submissions — see your current piece(s) with us and their status
+* My Sales — see anything of yours that's sold, and confirm once you've delivered it to the buyer
+* My Invoices — a record of what's owed to you once a sale is confirmed as delivered
+
+IMPORTANT — PLEASE CHECK YOUR LISTINGS REGULARLY
+We would be very grateful if you could regularly check that work we have listed for you on our live website is still available. If this is not the case, please use the "Withdraw" button next to the relevant piece.
+
+If you get stuck at any point, or something isn't working as expected, just reply to this email or give us a call — we're always happy to help.
+
+Thank you, as ever, for being part of Art for Cure.
+
+Best regards,
+Art for Cure`;
+  return { html, text };
+}
+
+exports.artistSignup = onCall(
+  { region: 'europe-west2', secrets: [SENDGRID_KEY] },
+  async (request) => {
+    const d = request.data || {};
+    const firstName = String(d.firstName || '').trim().slice(0, 60);
+    const lastName = String(d.lastName || '').trim().slice(0, 60);
+    const email = String(d.email || '').trim().toLowerCase().slice(0, 200);
+    const termsVersion = String(d.termsVersion || '').slice(0, 20);
+
+    // Bots: honeypot filled, or submitted implausibly fast -> pretend success, do nothing
+    if (d.website || Number(d.elapsedMs) < 3000) {
+      console.warn('artistSignup: rejected as bot', email);
+      return { status: 'created' };
+    }
+    if (!firstName || !lastName) throw new HttpsError('invalid-argument', 'Please enter your first name and surname.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpsError('invalid-argument', 'Please enter a valid email address.');
+    if (d.agreed !== true) throw new HttpsError('invalid-argument', 'Please tick the box to confirm you agree to the terms.');
+
+    const name = `${firstName} ${lastName}`;
+    const db = admin.firestore();
+    const acceptance = {
+      firstName, lastName, name, email, termsVersion,
+      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      acceptedAtStr: portalNowStr(),
+    };
+
+    // Already has a login? Record acceptance only.
+    let existing = null;
+    try { existing = await admin.auth().getUserByEmail(email); } catch (e) { if (e.code !== 'auth/user-not-found') throw e; }
+    if (existing) {
+      await db.collection('artistSignups').add({ ...acceptance, uid: existing.uid, outcome: 'existing_account' });
+      await db.collection('users').doc(existing.uid).set({ termsVersion, termsAcceptedAt: acceptance.acceptedAtStr }, { merge: true });
+      console.log(`artistSignup: ${email} already has a login — acceptance recorded`);
+      return { status: 'existing' };
+    }
+
+    // New artist: create login + profile
+    const password = tempPassword();
+    const user = await admin.auth().createUser({ email, password, displayName: name });
+    await db.collection('users').doc(user.uid).set({
+      uid: user.uid, name, email, role: 'artist', trustee: false, disabled: false,
+      createdAt: portalNowStr(), signupSource: 'join-page',
+      termsVersion, termsAcceptedAt: acceptance.acceptedAtStr,
+    });
+    await db.collection('artistSignups').add({ ...acceptance, uid: user.uid, outcome: 'account_created' });
+
+    sgMail.setApiKey(SENDGRID_KEY.value());
+    const { html, text } = artistWelcomeEmail(firstName, email, password);
+    try {
+      await sgMail.send({
+        to: email,
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: 'Welcome to the Art for Cure artist portal — your login details',
+        html, text,
+      });
+      console.log(`artistSignup: welcome email sent to ${email}`);
+    } catch (err) {
+      console.error('SendGrid error (artist welcome):', err.response ? err.response.body : err);
+    }
+    try {
+      await sgMail.send({
+        to: SIGNUP_ALERT_EMAIL,
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject: `New artist sign-up — ${name}`,
+        html: `<p><strong>${htmlEsc(name)}</strong> (${htmlEsc(email)}) has agreed to the Online Gallery terms (version ${htmlEsc(termsVersion)}) and a portal login has been created for them automatically.</p>
+               <p>They have been sent the welcome email. If you don't recognise this artist, you can disable or remove them in the portal under ⚙ Settings → Existing Users.</p>`,
+      });
+    } catch (err) {
+      console.error('SendGrid error (signup alert):', err.response ? err.response.body : err);
+    }
+    return { status: 'created' };
   }
 );

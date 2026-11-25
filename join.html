@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join the Art for Cure Online Gallery</title>
+<script src="terms.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --pink: #D30582; --pink-dark: #a8046a; --pink-light: #fce8f3; --ink: #251a1f; --grey: #6e5c64; --border: #e6dfe3; --bg: #faf8f9; }
+  body { font-family: 'Century Gothic', CenturyGothic, AppleGothic, 'URW Gothic', sans-serif; background: var(--bg); color: var(--ink); line-height: 1.6; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  .logo { text-align: center; margin-bottom: 1.5rem; }
+  .logo img { height: 64px; }
+  h1 { text-align: center; font-size: 28px; font-weight: 700; margin-bottom: .5rem; }
+  .intro { text-align: center; color: var(--grey); max-width: 640px; margin: 0 auto 2rem; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; margin-bottom: 1.25rem; }
+  .card h2 { font-size: 17px; margin-bottom: 1.1rem; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); display: inline-block; }
+  .term { margin-bottom: 1.1rem; }
+  .term b { display: block; margin-bottom: 2px; }
+  .term p { font-size: 14px; color: var(--grey); }
+  a { color: var(--pink); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  input[type=text], input[type=email] { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+  input:focus { outline: 2px solid var(--pink); outline-offset: 1px; }
+  .field { margin-bottom: 1rem; }
+  .agree { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: .5rem 0 1.25rem; cursor: pointer; }
+  .agree input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--pink); flex: none; }
+  button { font: inherit; font-weight: 700; font-size: 16px; background: var(--pink); color: #fff; border: 0; border-radius: 8px; padding: 12px 24px; min-height: 44px; cursor: pointer; }
+  button:hover { background: var(--pink-dark); }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 1rem; padding: 12px 14px; border-radius: 8px; font-size: 14px; display: none; }
+  .msg.ok { display: block; background: #e9f7ee; color: #1d6b3a; }
+  .msg.warn { display: block; background: #fff4e0; color: #7a4b00; }
+  .msg.err { display: block; background: #fdeaea; color: #8a1f1f; }
+  .hp { position: absolute; left: -9999px; height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo"><img src="AFC1.png" alt="Art for Cure"></div>
+  <h1>Online Gallery — Terms for Artists</h1>
+  <p class="intro" id="intro"></p>
+
+  <div class="card">
+    <h2><span class="dot"></span>How It Works</h2>
+    <div id="terms"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="dot"></span>Questions?</h2>
+    <p style="font-size:14px;color:var(--grey)">We'd be thrilled to help with anything at all — get in touch any time at
+      <a href="mailto:belinda@artforcure.org.uk">belinda@artforcure.org.uk</a> or 07815 061132.</p>
+  </div>
+
+  <div class="card" id="signup-card">
+    <h2><span class="dot"></span>Join the Online Gallery</h2>
+    <p style="font-size:14px;color:var(--grey);margin-bottom:1.25rem">Enter your details and confirm you agree to the terms above. We'll email you straight away with your login for the artist portal.</p>
+    <form id="signup-form" novalidate>
+      <div class="row">
+        <div class="field"><label for="firstName">First name</label><input type="text" id="firstName" autocomplete="given-name" required></div>
+        <div class="field"><label for="lastName">Surname</label><input type="text" id="lastName" autocomplete="family-name" required></div>
+      </div>
+      <div class="field"><label for="email">Email address</label><input type="email" id="email" autocomplete="email" required></div>
+      <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" tabindex="-1" autocomplete="off"></div>
+      <label class="agree"><input type="checkbox" id="agree"> <span>I have read and agree to the Art for Cure Online Gallery Terms for Artists set out above.</span></label>
+      <button type="submit" id="submit-btn">Confirm and create my login</button>
+      <div class="msg" id="msg" role="status"></div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js';
+
+const T = window.AFC_TERMS || { intro: '', items: [] };
+document.getElementById('intro').innerHTML = T.intro;   // trusted text from terms.js
+document.getElementById('terms').innerHTML = T.items.map(([t, p]) => `<div class="term"><b>${t}</b><p>${p}</p></div>`).join('');
+
+const app = initializeApp({
+  apiKey: "AIzaSyCvrAP7gRxzrt-OJKFPMr0ezEY9H4Xw5So",
+  authDomain: "art-for-cure.firebaseapp.com",
+  projectId: "art-for-cure",
+  storageBucket: "art-for-cure.firebasestorage.app",
+  messagingSenderId: "11223551235",
+  appId: "1:11223551235:web:2a4472a2e56530844ced36"
+});
+const artistSignup = httpsCallable(getFunctions(app, 'europe-west2'), 'artistSignup');
+const loadedAt = Date.now();
+
+const msg = document.getElementById('msg');
+const show = (cls, text) => { msg.className = 'msg ' + cls; msg.textContent = text; };
+
+document.getElementById('signup-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const firstName = document.getElementById('firstName').value.trim();
+  const lastName = document.getElementById('lastName').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const agreed = document.getElementById('agree').checked;
+  if (!firstName || !lastName) return show('warn', 'Please enter your first name and surname.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return show('warn', 'Please enter a valid email address.');
+  if (!agreed) return show('warn', 'Please tick the box to confirm you agree to the terms.');
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Creating your login…'; msg.className = 'msg';
+  try {
+    const res = await artistSignup({
+      firstName, lastName, email, agreed,
+      termsVersion: T.version,
+      website: document.getElementById('website').value,
+      elapsedMs: Date.now() - loadedAt
+    });
+    const status = res.data && res.data.status;
+    if (status === 'existing') {
+      show('ok', 'Thank you — your agreement to the terms has been recorded. You already have a portal login: go to submit.artforcure.org.uk and use "Forgot password?" if you need a new password.');
+    } else {
+      show('ok', `Thank you, ${firstName}! Your login has been created and a welcome email with your temporary password is on its way to ${email}. If it hasn't arrived within a few minutes, please check your spam or junk folder.`);
+    }
+    document.getElementById('signup-form').querySelectorAll('input,button').forEach(el => el.disabled = true);
+    btn.textContent = 'Done';
+  } catch (err) {
+    console.error(err);
+    show('err', (err && err.message && err.code === 'functions/invalid-argument') ? err.message
+      : 'Sorry, something went wrong. Please try again, or email belinda@artforcure.org.uk and we will set you up.');
+    btn.disabled = false; btn.textContent = 'Confirm and create my login';
+  }
+});
+</script>
+</body>
+</html>
