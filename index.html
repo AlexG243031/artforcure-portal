@@ -3578,6 +3578,9 @@ window.renderUserManagement = async function() {
     const snap = await getDocs(collection(db,'users'));
     const users = []; snap.forEach(d=>users.push({docId:d.id,...d.data()}));
     if(!users.length) { el.innerHTML='<div class="empty-state"><h3>No users yet.</h3></div>'; return; }
+    // Sort A-Z by surname (last word of name), then first name; users with no name go last
+    const _sk = u => { const p=(u.name||'').trim().split(/\s+/).filter(Boolean); return p.length ? [p[p.length-1].toLowerCase(), p.slice(0,-1).join(' ').toLowerCase()] : ['\uffff', (u.email||'').toLowerCase()]; };
+    users.sort((x,y)=>{ const a=_sk(x), b=_sk(y); return a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]); });
     el.innerHTML = users.map(u => `
       <div class="user-row">
         <div>
