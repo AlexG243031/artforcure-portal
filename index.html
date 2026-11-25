@@ -3570,14 +3570,23 @@ window.renderUserManagement = async function() {
     // Sort A-Z by surname (last word of name), then first name; users with no name go last
     const _sk = u => { const p=(u.name||'').trim().split(/\s+/).filter(Boolean); return p.length ? [p[p.length-1].toLowerCase(), p.slice(0,-1).join(' ').toLowerCase()] : ['\uffff', (u.email||'').toLowerCase()]; };
     users.sort((x,y)=>{ const a=_sk(x), b=_sk(y); return a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]); });
-    el.innerHTML = users.map(u => `
+    // Two tabs: Active users (default) and Disabled users (disabled or removed accounts)
+    const _tab = window._userMgmtTab === 'disabled' ? 'disabled' : 'active';
+    const _active = users.filter(u=>!u.disabled), _disabled = users.filter(u=>!!u.disabled);
+    const _shown = _tab === 'disabled' ? _disabled : _active;
+    const _tabs = `<div style="display:flex;gap:8px;margin-bottom:0.75rem">
+        <button class="btn btn-sm ${_tab==='active'?'btn-primary':'btn-secondary'}" onclick="window._userMgmtTab='active';renderUserManagement()">Active (${_active.length})</button>
+        <button class="btn btn-sm ${_tab==='disabled'?'btn-primary':'btn-secondary'}" onclick="window._userMgmtTab='disabled';renderUserManagement()">Disabled (${_disabled.length})</button>
+      </div>`;
+    if(!_shown.length) { el.innerHTML = _tabs + `<div class="empty-state"><h3>${_tab==='disabled'?'No disabled users.':'No active users.'}</h3></div>`; return; }
+    el.innerHTML = _tabs + _shown.map(u => `
       <div class="user-row">
         <div>
           <div class="user-name">${esc(u.name||'—')}</div>
           <div class="user-email">${esc(u.email||'—')}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span class="user-badge ${(u.role==='admin'||u.role==='superadmin')?'user-badge-admin':u.disabled?'user-badge-disabled':'user-badge-artist'}">${u.role==='superadmin'?'Super Admin':u.role==='admin'?'Admin':u.disabled?'Disabled':'Artist'}</span>
+          <span class="user-badge ${(u.role==='admin'||u.role==='superadmin')?'user-badge-admin':u.disabled?'user-badge-disabled':'user-badge-artist'}">${u.role==='superadmin'?'Super Admin':u.role==='admin'?'Admin':u.deletedAt?'Removed':u.disabled?'Disabled':'Artist'}</span>
           ${u.trustee?`<span class="user-badge user-badge-trustee">Trustee</span>`:''}
           ${!u.trustee?`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',false)">Make Trustee</button>`:`<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="toggleUserTrustee('${u.docId}',true)">Remove Trustee</button>`}
           ${u.role!=='superadmin'?`
